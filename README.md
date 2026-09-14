@@ -130,6 +130,7 @@ past its `index.ts`.
 | [Contributing](CONTRIBUTING.md) | branching, PR rules, definition of done |
 | [Architecture decisions](docs/adr/) | why things are the way they are |
 | [System overview](docs/architecture/overview.md) | the shape of the whole thing |
+| [Repository topology](docs/architecture/repository-topology.md) | how the five repositories relate, and the standards across all of them |
 | [Layering](docs/architecture/layering.md) | the boundaries and how they are enforced |
 | [Adding a module](docs/guides/adding-a-module.md) | **start here for your first feature** |
 | [Local setup](docs/guides/local-setup.md) | from clone to running |
