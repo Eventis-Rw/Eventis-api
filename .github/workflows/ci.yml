@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://eventis:eventis@localhost:5432/eventis_test
+  REDIS_URL: redis://localhost:6379
+  JWT_ACCESS_SECRET: test-secret-that-is-long-enough-for-validation
+  JWT_REFRESH_SECRET: test-refresh-secret-long-enough-for-validation
+  TICKET_SIGNING_PRIVATE_KEY: test-private
+  TICKET_SIGNING_PUBLIC_KEY: test-public
+  STORAGE_ENDPOINT: http://localhost:9000
+  STORAGE_BUCKET: eventis-test
+  STORAGE_ACCESS_KEY_ID: test
+  STORAGE_SECRET_ACCESS_KEY: test
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.4.2 }
+      - run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+      - name: Typecheck
+        run: bun run typecheck
+
+      # These two are the difference between a modular monolith and a monolith with
+      # directories. The second asserts the rules actually fail on a violation —
+      # the first version of them caught nothing and passed anyway.
+      - name: Module boundaries
+        run: bun run depcruise
+      - name: Boundary rules actually enforce something
+        run: bun run depcruise:verify
+
+      - name: Money guard (no floating point in payments or ledger)
+        run: bun run guard:money
+
+      - name: Build
+        run: bun run build
+
+  test:
+    name: Tests (${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # ADR 0002: Node is the verified fallback, so the suite runs under both.
+        # The day Bun breaks something we learn it from a red check, not from production.
+        runtime: [bun, node]
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: eventis
+          POSTGRES_PASSWORD: eventis
+          POSTGRES_DB: eventis_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U eventis" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.4.2 }
+      - uses: actions/setup-node@v6
+        if: matrix.runtime == 'node'
+        with: { node-version: 22 }
+      - run: bun install --frozen-lockfile
+
+      - name: Migrations apply cleanly to an empty database
+        run: bun run db:migrate
+
+      - name: Migrations are in sync with the schema
+        run: bun run db:check
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Integration tests
+        run: bun run test:integration
+
+      - name: Smoke — the API actually boots on this runtime
+        run: |
+          if [ "${{ matrix.runtime }}" = "node" ]; then
+            bun run build && node dist/main.js & 
+          else
+            bun run src/main.ts &
+          fi
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3000/healthz && exit 0
+            sleep 1
+          done
+          echo "API did not become healthy on ${{ matrix.runtime }}"
+          exit 1
+
+  commitlint:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.4.2 }
+      - run: bun install --frozen-lockfile
+      - run: bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - name: Block committed secrets
+        run: |
+          # This repository is public. A leaked credential is public the moment it lands.
+          if git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD 2>/dev/null \
+             | grep -E '(^|/)\.env$|\.pem$|\.p8$|\.p12$|\.key$|\.keystore$'; then
+            echo "A secret-shaped file is in this diff. Rotate the credential first, then remove it."
+            exit 1
+          fi
+          echo "No secret-shaped files in the diff."

@@ -1,0 +1,52 @@
+# Local development stack. `docker compose -f docker/docker-compose.yml up -d`
+#
+# These are the same service versions CI uses, so "works on my machine" and "passes
+# in CI" mean the same thing.
+name: eventis
+
+services:
+  db:
+    # PostGIS, not plain Postgres. Discovery needs geography columns and a GiST index.
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: eventis
+      POSTGRES_PASSWORD: eventis
+      POSTGRES_DB: eventis
+    ports: ['5432:5432']
+    volumes: ['eventis-db:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U eventis -d eventis']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports: ['6379:6379']
+    volumes: ['eventis-redis:/data']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Local S3, standing in for Cloudflare R2.
+  minio:
+    image: minio/minio
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: eventis
+      MINIO_ROOT_PASSWORD: eventis-dev-secret
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['eventis-minio:/data']
+
+  # Catches outbound mail so nothing reaches a real inbox from a dev machine.
+  mailpit:
+    image: axllent/mailpit
+    ports: ['1025:1025', '8025:8025']
+
+volumes:
+  eventis-db:
+  eventis-redis:
+  eventis-minio:

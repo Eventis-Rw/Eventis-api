@@ -1,0 +1,28 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+
+# secrets — never commit. These repositories are public.
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.key
+*.keystore
+
+coverage/
+openapi.json
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# TEMPORARY — remove this line once @eventis/contracts is published to npm.
+# The current lockfile resolves @eventis/* through local `bun link`, which is correct
+# for this machine and wrong for everyone else. Committing it would break every other
+# clone. The first PR after publishing commits a real lockfile.
+bun.lock

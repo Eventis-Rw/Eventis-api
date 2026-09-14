@@ -1,0 +1,17 @@
+# Interns do not own payments or ledger. This is not a judgement of ability: a bug
+# there costs real money, needs an audit trail, and requires context nobody has in
+# their first months. They pair on it and write tests against FakeProvider.
+#
+# Enforced by GitHub rather than by memory.
+
+*                                   @pac-cee
+
+/src/modules/payments/              @pac-cee
+/src/modules/ledger/                @pac-cee
+/src/modules/identity/              @pac-cee
+/src/infra/database/schema/         @pac-cee
+/drizzle/                           @pac-cee
+/.github/                           @pac-cee
+/docker/                            @pac-cee
+/scripts/guard-money.sh             @pac-cee
+/.dependency-cruiser.cjs            @pac-cee

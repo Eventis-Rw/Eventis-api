@@ -1,0 +1,40 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: [bug, needs-triage]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Observed behaviour versus expected behaviour. Facts only.
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations: { required: true }
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: staging / production / local — app version, device, OS
+    validations: { required: true }
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Request ID, Sentry link, timestamp, logs. Redact tokens and phone numbers.
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Money or data loss
+        - Blocks a user from completing a purchase or check-in
+        - Degraded but has a workaround
+        - Cosmetic
+    validations: { required: true }

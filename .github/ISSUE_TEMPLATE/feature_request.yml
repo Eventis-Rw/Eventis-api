@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a change in behaviour
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: Whose problem is it, and how do you know it is real?
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+    validations: { required: true }
+  - type: textarea
+    id: scope
+    attributes:
+      label: Explicitly out of scope
+      description: What this is NOT. Guard against scope creep now.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Scope check
+      options:
+        - label: This is not chat, dating, wallets, tokens, gifting, live video, recommendation ML, or a social feed
+          required: true
