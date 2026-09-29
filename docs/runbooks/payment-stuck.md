@@ -7,8 +7,8 @@ intent in `unknown` or `awaiting_user` well past its timeout.
 
 ## First: do not retry it
 
-**Never blindly retry a payment in `unknown`.** `unknown` means *we do not know whether
-the money moved*. Retrying is how a customer gets charged twice, and a double charge
+**Never blindly retry a payment in `unknown`.** `unknown` means _we do not know whether
+the money moved_. Retrying is how a customer gets charged twice, and a double charge
 costs far more in trust than a delayed ticket.
 
 The truth comes from the provider, via `getStatus()`, never from a guess.
@@ -34,12 +34,12 @@ Then for one intent, in order:
 
 ## Resolve
 
-| Provider says | Do |
-|---|---|
-| `succeeded` | Re-run reconciliation for that intent. It issues the ticket and writes the ledger entries idempotently. |
-| `failed` | Mark failed. Release the inventory hold. Tell the user they were not charged. |
-| still pending | Leave it. Reconciliation backs off exponentially. Tell the user it is with the provider. |
-| provider unreachable | Leave it in `reconciling`. Do **not** resolve it manually. |
+| Provider says        | Do                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `succeeded`          | Re-run reconciliation for that intent. It issues the ticket and writes the ledger entries idempotently. |
+| `failed`             | Mark failed. Release the inventory hold. Tell the user they were not charged.                           |
+| still pending        | Leave it. Reconciliation backs off exponentially. Tell the user it is with the provider.                |
+| provider unreachable | Leave it in `reconciling`. Do **not** resolve it manually.                                              |
 
 ## Never
 

@@ -1,18 +1,7 @@
 {
   "extends": "@eventis/tsconfig/nest.json",
   "compilerOptions": {
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "src/*"
-      ]
-    }
+    "noEmit": true
   },
-  "include": [
-    "src/**/*",
-    "test/**/*",
-    "scripts/**/*",
-    "drizzle.config.ts"
-  ]
+  "include": ["src/**/*", "test/**/*", "scripts/**/*"]
 }

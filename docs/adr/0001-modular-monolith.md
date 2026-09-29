@@ -22,7 +22,7 @@ which is a category of bug interns cannot debug and a tech lead should not have 
 The operational cost is also real: separate deploys, separate logs, network failure
 between every call, and a tracing setup before the first paying customer.
 
-## What makes this a *modular* monolith rather than a monolith
+## What makes this a _modular_ monolith rather than a monolith
 
 TypeScript will happily let `catalog` import from `commerce`. Nothing stops it, and
 nothing about good intentions survives eight people pushing daily for six weeks.

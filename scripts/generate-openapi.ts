@@ -16,8 +16,8 @@ import {
   orderPaymentState,
   ticket,
   remoteConfig,
-} from '@eventis/contracts';
-import { z } from 'zod';
+} from "@eventis/contracts";
+import { z } from "zod";
 
 const schemas = {
   Category: category,
@@ -32,26 +32,26 @@ const schemas = {
 const components = Object.fromEntries(
   Object.entries(schemas).map(([name, schema]) => [
     name,
-    z.toJSONSchema(schema, { target: 'openapi-3.0', io: 'output' }),
+    z.toJSONSchema(schema, { target: "openapi-3.0", io: "output" }),
   ]),
 );
 
 process.stdout.write(
   JSON.stringify(
     {
-      openapi: '3.0.3',
+      openapi: "3.0.3",
       info: {
-        title: 'Eventis API',
-        version: '1.0.0',
+        title: "Eventis API",
+        version: "1.0.0",
         description:
-          'Event discovery, listing, ticketing and check-in. Schemas are generated from ' +
-          '@eventis/contracts, which is also what the API validates against.',
+          "Event discovery, listing, ticketing and check-in. Schemas are generated from " +
+          "@eventis/contracts, which is also what the API validates against.",
       },
-      servers: [{ url: 'https://api.eventis.rw/api/v1' }],
+      servers: [{ url: "https://api.eventis.rw/api/v1" }],
       paths: {},
       components: { schemas: components },
     },
     null,
     2,
-  ) + '\n',
+  ) + "\n",
 );

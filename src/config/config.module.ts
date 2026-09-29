@@ -1,6 +1,6 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module } from "@nestjs/common";
 
-import { ENV, loadEnv, type Env } from './env.js';
+import { ENV, loadEnv, type Env } from "./env.js";
 
 /**
  * Config is global because everything needs it and threading it through every

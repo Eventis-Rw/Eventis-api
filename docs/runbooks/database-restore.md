@@ -7,7 +7,7 @@ after. The first time you run it must not be the day you need it.
 
 1. **Stop writes.** Scale the API and workers to zero. A restore racing live traffic
    produces a database that matches nothing.
-2. **Note the target time.** Point-in-time recovery needs the moment *just before* the
+2. **Note the target time.** Point-in-time recovery needs the moment _just before_ the
    damage — usually just before the bad migration or the bad deploy.
 3. **Tell the tech lead.** This is never a solo action.
 

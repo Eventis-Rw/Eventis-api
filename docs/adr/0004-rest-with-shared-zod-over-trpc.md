@@ -26,7 +26,7 @@ type-level coupling that assumes both halves shipped at once.
 Almost all of tRPC's benefit, by sharing the schemas instead of the transport:
 
 ```ts
-import { eventListQuery, type EventSummary } from '@eventis/contracts';
+import { eventListQuery, type EventSummary } from "@eventis/contracts";
 ```
 
 The API validates with `eventListQuery` and types its responses as `EventSummary[]`.

@@ -1,10 +1,33 @@
+# Dependencies
 node_modules/
-dist/
-*.tsbuildinfo
-.DS_Store
-Thumbs.db
 
-# secrets — never commit. These repositories are public.
+# Build / compile output
+dist/
+build/
+*.tsbuildinfo
+
+# Prisma — generated client lives under node_modules; never commit engines/cache
+# (schema + migrations under prisma/ ARE committed)
+.prisma/
+
+# Logs and runtime dumps
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun-debug.log*
+
+# Test / coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Generated OpenAPI (regenerate with `bun run openapi`)
+openapi.json
+
+# Environment and secrets — never commit. This repository is public.
 .env
 .env.*
 !.env.example
@@ -13,16 +36,38 @@ Thumbs.db
 *.p12
 *.key
 *.keystore
+*.p12
+credentials.json
+service-account*.json
 
-coverage/
-openapi.json
+# OS junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editors / IDEs
 .idea/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+*.swp
+*.swo
+*~
 
-# TEMPORARY — remove this line once @eventis/contracts is published to npm.
-# The current lockfile resolves @eventis/* through local `bun link`, which is correct
-# for this machine and wrong for everyone else. Committing it would break every other
-# clone. The first PR after publishing commits a real lockfile.
+# Caches
+.cache/
+.eslintcache
+.prettiercache
+.tmp/
+temp/
+
+# Docker local overrides (compose override for personal ports/secrets)
+docker-compose.override.yml
+docker/docker-compose.override.yml
+
+# TEMPORARY — remove this block once @eventis/* packages are published to npm.
+# Local bun link rewrites the lockfile; committing it breaks other clones / CI.
+# After the first npm publish, commit a real bun.lock and delete these lines.
 bun.lock
+bun.lockb

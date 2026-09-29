@@ -1,4 +1,4 @@
-import { ERROR_CODES, type ErrorCode } from '@eventis/contracts';
+import { ERROR_CODES, type ErrorCode } from "@eventis/contracts";
 
 /**
  * The only error type business code throws.
@@ -22,25 +22,30 @@ export class AppError extends Error {
     } = {},
   ) {
     super(message, { cause: options.cause });
-    this.name = 'AppError';
+    this.name = "AppError";
   }
 
   static notFound(what: string): AppError {
     return new AppError(ERROR_CODES.NOT_FOUND, `${what} was not found`, 404);
   }
 
-  static forbidden(message = 'You do not have access to this'): AppError {
+  static forbidden(message = "You do not have access to this"): AppError {
     return new AppError(ERROR_CODES.FORBIDDEN, message, 403);
   }
 
-  static unauthenticated(message = 'Sign in to continue'): AppError {
+  static unauthenticated(message = "Sign in to continue"): AppError {
     return new AppError(ERROR_CODES.UNAUTHENTICATED, message, 401);
   }
 
   static validation(fields: Record<string, string[]>): AppError {
-    return new AppError(ERROR_CODES.VALIDATION_FAILED, 'Some fields need attention', 422, {
-      fields,
-    });
+    return new AppError(
+      ERROR_CODES.VALIDATION_FAILED,
+      "Some fields need attention",
+      422,
+      {
+        fields,
+      },
+    );
   }
 
   static conflict(code: ErrorCode, message: string): AppError {
@@ -48,8 +53,13 @@ export class AppError extends Error {
   }
 
   static rateLimited(retryAfterSeconds: number): AppError {
-    return new AppError(ERROR_CODES.RATE_LIMITED, 'Too many attempts. Try again shortly.', 429, {
-      retryAfterSeconds,
-    });
+    return new AppError(
+      ERROR_CODES.RATE_LIMITED,
+      "Too many attempts. Try again shortly.",
+      429,
+      {
+        retryAfterSeconds,
+      },
+    );
   }
 }
