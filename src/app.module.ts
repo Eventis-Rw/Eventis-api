@@ -6,6 +6,7 @@ import { LoggerModule } from "nestjs-pino";
 import { ConfigModule } from "./config/config.module.js";
 import { ENV, type Env } from "./config/env.js";
 import { PrismaModule } from "./infrastructure/database/prisma.module.js";
+import { AuthModule } from "./modules/auth/auth.module.js";
 import { EventsModule } from "./modules/events/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 
@@ -60,6 +61,7 @@ import { PlatformModule } from "./modules/platform/index.js";
     PrismaModule,
     PlatformModule,
     EventsModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

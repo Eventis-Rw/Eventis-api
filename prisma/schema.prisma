@@ -108,3 +108,40 @@ model Event {
   @@index([status, startsAt], map: "events_status_starts_idx")
   @@map("events")
 }
+
+// ---------- Users / Authentication ----------
+
+enum AccountType {
+  POSTER
+  LOVE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  firstName    String      @map("first_name") @db.VarChar(100)
+  lastName     String      @map("last_name") @db.VarChar(100)
+  email        String      @unique @db.VarChar(255)
+  phone        String      @db.VarChar(30)
+  passwordHash String      @map("password_hash") @db.VarChar(255)
+  accountType  AccountType @map("account_type")
+  status       UserStatus  @default(ACTIVE)
+
+  organizationName        String? @map("organization_name") @db.VarChar(160)
+  organizationDescription String? @map("organization_description") @db.Text
+
+  dateOfBirth  DateTime? @map("date_of_birth") @db.Date
+  gender       String?   @db.VarChar(30)
+  bio          String?   @db.Text
+  location     String?   @map("location") @db.VarChar(160)
+  interestedIn String?   @map("interested_in") @db.VarChar(30)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("users")
+}
