@@ -38,10 +38,12 @@ describe("TokenService", () => {
     const issued = await tokens.issueAccessToken({
       sub: "11111111-1111-1111-1111-111111111111",
       deviceId: "device-install-01",
+      role: "organizer_owner",
     });
     const claims = await tokens.verifyAccessToken(issued.token);
     expect(claims.sub).toBe("11111111-1111-1111-1111-111111111111");
     expect(claims.deviceId).toBe("device-install-01");
+    expect(claims.role).toBe("organizer_owner");
   });
 
   it("rejects an expired access token", async () => {

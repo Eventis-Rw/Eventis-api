@@ -70,6 +70,7 @@ export class LoginService {
     const access = await this.tokens.issueAccessToken({
       sub: user.id,
       deviceId: input.deviceId,
+      role: user.accountType === "POSTER" ? "organizer_owner" : "customer",
     });
     return toAuthSession({
       user,

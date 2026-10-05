@@ -65,6 +65,7 @@ export class RefreshTokenService {
     const access = await this.tokens.issueAccessToken({
       sub: user.id,
       deviceId: session.deviceId,
+      role: user.accountType === "POSTER" ? "organizer_owner" : "customer",
     });
 
     return toAuthTokens({

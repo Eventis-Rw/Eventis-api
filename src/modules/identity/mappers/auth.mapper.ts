@@ -9,7 +9,7 @@ export function toSessionUser(user: User): SessionUser {
     phone: user.phone,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
-    roles: ["customer"],
+    roles: [user.accountType === "POSTER" ? "organizer_owner" : "customer"],
     createdAt: user.createdAt.toISOString(),
   };
 }

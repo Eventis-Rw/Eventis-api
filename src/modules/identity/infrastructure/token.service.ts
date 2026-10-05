@@ -10,6 +10,7 @@ import { generateRefreshToken, hashSecret } from "../domain/otp.js";
 export interface AccessTokenClaims {
   sub: string;
   deviceId: string;
+  role?: string;
 }
 
 export interface IssuedAccessToken {
@@ -72,7 +73,11 @@ export class TokenService {
       now.getTime() + this.env.JWT_ACCESS_TTL_SECONDS * 1000,
     );
 
-    const token = await new SignJWT({ deviceId: claims.deviceId })
+    const token = await new SignJWT({
+      deviceId: claims.deviceId,
+      role: claims.role ?? "customer",
+      roles: [claims.role ?? "customer"],
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(claims.sub)
       .setIssuedAt(Math.floor(now.getTime() / 1000))
@@ -95,10 +100,11 @@ export class TokenService {
       }
       const deviceId =
         typeof payload.deviceId === "string" ? payload.deviceId : "";
+      const role = typeof payload.role === "string" ? payload.role : "customer";
       if (!deviceId) {
         throw AppError.unauthenticated();
       }
-      return { sub: payload.sub, deviceId };
+      return { sub: payload.sub, deviceId, role };
     } catch (error) {
       if (error instanceof AppError) throw error;
       if (error instanceof JoseErrors.JWTExpired) {

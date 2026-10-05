@@ -212,6 +212,7 @@ export class VerifyOtpService {
     const access = await this.tokens.issueAccessToken({
       sub: result.user.id,
       deviceId: input.deviceId,
+      role: result.user.accountType === "POSTER" ? "organizer_owner" : "customer",
     });
 
     return toAuthSession({

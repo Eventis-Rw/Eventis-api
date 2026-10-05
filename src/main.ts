@@ -29,7 +29,7 @@ async function bootstrap(): Promise<void> {
     trustProxy: true,
     genReqId: (req: IncomingMessage) =>
       (req.headers[REQUEST_ID_HEADER] as string | undefined) ?? randomUUID(),
-    bodyLimit: 1_048_576,
+    bodyLimit: 6 * 1024 * 1024,
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -42,7 +42,6 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(app.get(PinoLogger));
   app.useGlobalFilters(new AllExceptionsFilter());
-
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
   app.setGlobalPrefix("api", { exclude: ["healthz", "readyz"] });
 
@@ -58,6 +57,12 @@ async function bootstrap(): Promise<void> {
     contentSecurityPolicy: false,
   });
 
+  await app.register(import("@fastify/multipart"), {
+    limits: {
+      fileSize: 5 * 1024 * 1024,
+      files: 1,
+    },
+  });
   app.enableShutdownHooks();
 
   const env = app.get<Env>(ENV);
