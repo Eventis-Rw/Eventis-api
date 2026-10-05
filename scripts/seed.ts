@@ -41,6 +41,16 @@ try {
     where: { title: "Kigali Jazz Night" },
   });
 
+  const poster = await prisma.user.upsert({
+    where: { phone: "+250780000001" },
+    create: {
+      phone: "+250780000001",
+      displayName: "Default Poster",
+      role: "organizer_owner",
+    },
+    update: {},
+  });
+
   if (!existing) {
     await prisma.event.create({
       data: {
@@ -48,10 +58,10 @@ try {
         description:
           "An evening of live jazz in Kimihurura. Reference seed event.",
         status: "draft",
-        startsAt: new Date("2026-10-15T18:00:00.000Z"),
-        endsAt: new Date("2026-10-15T22:00:00.000Z"),
-        venueName: "The Hut",
-        address: "KG 9 Ave, Kimihurura, Kigali",
+        startDate: new Date("2026-10-15T00:00:00.000Z"),
+        time: "18:00",
+        location: "KG 9 Ave, Kimihurura, Kigali",
+        posterId: poster.userId,
       },
     });
   }

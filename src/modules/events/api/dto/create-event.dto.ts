@@ -1,24 +1,34 @@
 import { z } from "zod";
 
-/**
- * API input for POST /events.
- *
- * Kept local to the reference module so the architecture demo does not require
- * organizers, ticket types or media. Production create payloads will move into
- * @eventis/contracts (see eventInput) once sibling modules exist.
- */
-export const createEventDto = z
-  .object({
-    title: z.string().trim().min(4).max(160),
-    description: z.string().trim().max(10_000).nullable().optional(),
-    startsAt: z.coerce.date(),
-    endsAt: z.coerce.date(),
-    venueName: z.string().trim().min(2).max(160),
-    address: z.string().trim().min(4).max(255),
-  })
-  .refine((v) => v.endsAt > v.startsAt, {
-    message: "the event must end after it starts",
-    path: ["endsAt"],
-  });
+import { EVENT_STATUSES } from "../../domain/event-status.js";
+
+const dateSchema = z.preprocess((val) => {
+  if (typeof val === "string" || val instanceof Date) {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return val;
+}, z.date({ message: "start_date must be a valid date" }));
+
+export const createEventDto = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(4, "title must be at least 4 characters")
+    .max(160, "title cannot exceed 160 characters"),
+  description: z.string().trim().max(10_000).nullable().optional(),
+  category: z.string().trim().max(60).nullable().optional(),
+  location: z
+    .string()
+    .trim()
+    .min(2, "location must be at least 2 characters")
+    .max(255, "location cannot exceed 255 characters"),
+  start_date: dateSchema,
+  time: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, "time must be in HH:mm format (e.g. 18:00)"),
+  status: z.enum(EVENT_STATUSES).optional().default("draft"),
+});
 
 export type CreateEventDto = z.infer<typeof createEventDto>;

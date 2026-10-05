@@ -141,6 +141,23 @@ GET    /api/v1/events/:id
 PATCH  /api/v1/events/:id
 ```
 
+### Create an event with a cover image
+
+In Postman, send `POST http://localhost:3000/api/v1/events`, set **Authorization → Bearer Token** to an access token for an `organizer_owner`, then select **Body → form-data**. Add the event properties as text fields and the image as a file:
+
+| Key | Postman type | Value |
+| --- | --- | --- |
+| `title` | Text | `Kigali Tech Meetup` |
+| `description` | Text | `A meetup for the local tech community` |
+| `category` | Text | `tech` |
+| `location` | Text | `Kigali Convention Centre` |
+| `start_date` | Text | `2026-11-01` |
+| `time` | Text | `17:00` |
+| `status` | Text | `draft` |
+| `cover_image` | **File** | Choose a `.jpg`, `.png`, or `.webp` image (max 5 MiB) |
+
+Do not enter JSON braces in form-data. Let Postman set the multipart `Content-Type` header, including its boundary. The image and text fields are processed in the same request.
+
 ## Database
 
 - **Prisma** is the ORM and schema source of truth ([ADR 0009](docs/adr/0009-prisma-over-drizzle.md))
@@ -157,6 +174,20 @@ PATCH  /api/v1/events/:id
 > [docs/guides/local-setup.md](docs/guides/local-setup.md). Without that step,
 > `bun install` cannot resolve `@eventis/contracts`, `@eventis/eslint-config` or
 > `@eventis/tsconfig`.
+
+
+# 1. Start the PostgreSQL database container in the background
+docker compose -f docker/docker-compose.yml up -d db
+
+# 2. Run Prisma migrations to synchronize database schema
+bunx prisma migrate dev
+
+# 3. Compile TypeScript code and update generated types
+bun run build
+
+# 4. Launch the NestJS API application server
+bun start
+
 
 ```bash
 bun install

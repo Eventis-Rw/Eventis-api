@@ -10,14 +10,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { AppError } from "../errors/app-error.js";
 
-/**
- * Every failure leaves the API in one shape: the ApiError envelope from the contracts
- * package. Clients switch on `code`; `message` is for humans.
- *
- * The other job of this filter is making sure an internal detail never escapes. An
- * unexpected exception returns a generic message and a request id — the detail goes
- * to the logs, where the person debugging can see it and the attacker cannot.
- */
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -86,7 +79,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
-    // Anything else is a bug. Say nothing useful to the caller; log everything.
     return {
       status: 500,
       body: {

@@ -2,33 +2,31 @@ import { describe, expect, it } from "bun:test";
 
 import {
   applyEventUpdate,
-  assertValidSchedule,
+  assertValidTime,
   canTransition,
   createEvent,
   type Event,
 } from "./event.js";
 
 const base: Event = {
-  id: "00000000-0000-4000-8000-000000000001",
+  eventId: "00000000-0000-4000-8000-000000000001",
   title: "Kigali Jazz Night",
   description: "Live jazz in Kimihurura",
+  coverImage: null,
+  category: "music",
+  location: "KG 9 Ave, Kimihurura",
+  startDate: new Date("2026-10-01T00:00:00.000Z"),
+  time: "18:00",
   status: "draft",
-  startsAt: new Date("2026-10-01T18:00:00.000Z"),
-  endsAt: new Date("2026-10-01T22:00:00.000Z"),
-  venueName: "The Hut",
-  address: "KG 9 Ave, Kimihurura",
+  viewsCount: 0,
+  posterId: "00000000-0000-4000-8000-000000000002",
   createdAt: new Date("2026-09-01T10:00:00.000Z"),
   updatedAt: new Date("2026-09-01T10:00:00.000Z"),
 };
 
-describe("assertValidSchedule", () => {
-  it("rejects an end time that is not after the start", () => {
-    expect(() =>
-      assertValidSchedule(
-        new Date("2026-10-01T18:00:00Z"),
-        new Date("2026-10-01T18:00:00Z"),
-      ),
-    ).toThrow(/end after it starts/);
+describe("assertValidTime", () => {
+  it("rejects an invalid time string", () => {
+    expect(() => assertValidTime("25:00")).toThrow(/HH:mm/);
   });
 });
 
@@ -48,10 +46,10 @@ describe("createEvent", () => {
     const created = createEvent(
       {
         title: "Tech Meetup",
-        startsAt: new Date("2026-11-01T17:00:00Z"),
-        endsAt: new Date("2026-11-01T20:00:00Z"),
-        venueName: "Impact Hub",
-        address: "KN 5 Rd",
+        location: "Impact Hub, KN 5 Rd",
+        startDate: new Date("2026-11-01T00:00:00Z"),
+        time: "17:00",
+        posterId: "00000000-0000-4000-8000-000000000002",
       },
       new Date("2026-09-29T08:00:00Z"),
     );

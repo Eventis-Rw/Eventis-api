@@ -1,37 +1,41 @@
-import type { Event } from "../domain/event.js";
+import type { Event, EventStatus } from "../domain/event.js";
 
-/**
- * The API NEVER returns a database row or a domain object directly.
- *
- * This response shape is the architecture-demo contract for events. The full
- * EventDetail / EventSummary types in @eventis/contracts require organizers,
- * ticket types and media — those land with their owning modules. Until then,
- * this mapper is the explicit boundary between domain and HTTP.
- */
 export interface EventResponse {
+  event_id: string;
   id: string;
   title: string;
   description: string | null;
-  status: Event["status"];
-  startsAt: string;
-  endsAt: string;
-  venueName: string;
-  address: string;
-  createdAt: string;
-  updatedAt: string;
+  cover_image: string | null;
+  category: string | null;
+  location: string;
+  start_date: string;
+  time: string;
+  status: EventStatus;
+  views_count: number;
+  poster_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export function toEventResponse(event: Event): EventResponse {
+export function toEventResponse(event: Event, coverUrl?: string | null): EventResponse {
+  const formattedStartDate = event.startDate instanceof Date
+    ? event.startDate.toISOString().split("T")[0]!
+    : String(event.startDate);
+
   return {
-    id: event.id,
+    event_id: event.eventId,
+    id: event.eventId,
     title: event.title,
     description: event.description,
+    cover_image: coverUrl !== undefined ? coverUrl : event.coverImage,
+    category: event.category,
+    location: event.location,
+    start_date: formattedStartDate,
+    time: event.time,
     status: event.status,
-    startsAt: event.startsAt.toISOString(),
-    endsAt: event.endsAt.toISOString(),
-    venueName: event.venueName,
-    address: event.address,
-    createdAt: event.createdAt.toISOString(),
-    updatedAt: event.updatedAt.toISOString(),
+    views_count: event.viewsCount,
+    poster_id: event.posterId,
+    created_at: event.createdAt.toISOString(),
+    updated_at: event.updatedAt.toISOString(),
   };
 }

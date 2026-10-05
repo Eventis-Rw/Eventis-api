@@ -80,7 +80,22 @@ model Category {
   @@map("categories")
 }
 
-// ---------- Events (reference module) ----------
+// ---------- Users / Identity ----------
+
+model User {
+  userId      String   @id @default(dbgenerated("gen_random_uuid()")) @map("user_id") @db.Uuid
+  phone       String   @unique @db.VarChar(20)
+  displayName String?  @map("display_name") @db.VarChar(60)
+  role        String   @default("customer") @db.VarChar(30)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  events      Event[]
+
+  @@map("users")
+}
+
+// ---------- Events ----------
 
 enum EventStatus {
   draft
@@ -90,21 +105,25 @@ enum EventStatus {
   @@map("event_status")
 }
 
-/// Reference entity for the architecture example in modules/events.
-/// Discovery will later add a PostGIS geography column via SQL migration —
-/// Prisma cannot express geography(Point, 4326) as a first-class typed column.
 model Event {
-  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String      @id @default(dbgenerated("gen_random_uuid()")) @map("event_id") @db.Uuid
   title       String      @db.VarChar(160)
   description String?     @db.Text
+  coverImage  String?     @map("cover_image") @db.VarChar(500)
+  category    String?     @db.VarChar(60)
+  location    String      @db.VarChar(255)
+  startDate   DateTime    @map("start_date") @db.Date
+  time        String      @db.VarChar(20)
   status      EventStatus @default(draft)
-  startsAt    DateTime    @map("starts_at") @db.Timestamptz(6)
-  endsAt      DateTime    @map("ends_at") @db.Timestamptz(6)
-  venueName   String      @map("venue_name") @db.VarChar(160)
-  address     String      @db.VarChar(255)
+  viewsCount  Int         @default(0) @map("views_count")
+  posterId    String      @map("poster_id") @db.Uuid
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@index([status, startsAt], map: "events_status_starts_idx")
+  poster      User        @relation(fields: [posterId], references: [userId], onDelete: Cascade)
+
+  @@index([status, startDate], map: "events_status_start_idx")
+  @@index([posterId], map: "events_poster_idx")
+  @@index([category], map: "events_category_idx")
   @@map("events")
 }

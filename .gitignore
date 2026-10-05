@@ -55,6 +55,9 @@ Desktop.ini
 *.swo
 *~
 
+# Local storage fallback for cover images (dev)
+uploads/
+
 # Caches
 .cache/
 .eslintcache

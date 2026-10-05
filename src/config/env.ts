@@ -44,6 +44,10 @@ const envSchema = z
     STORAGE_BUCKET: z.string().min(1),
     STORAGE_ACCESS_KEY_ID: z.string().min(1),
     STORAGE_SECRET_ACCESS_KEY: z.string().min(1),
+    MOBILE_APP_SCHEME: z
+      .string()
+      .regex(/^[a-z][a-z0-9+.-]*$/i)
+      .default("mobile"),
 
     PAYMENT_PROVIDER: z.enum(["fake", "aggregator"]).default("fake"),
     PAYMENT_PROVIDER_BASE_URL: optionalUrl,
@@ -85,7 +89,6 @@ export function loadEnv(
 ): Env {
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
-    // Print the field names and messages, never the values — this output reaches logs.
     const issues = parsed.error.issues
       .map((i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`)
       .join("\n");
