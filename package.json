@@ -11,10 +11,10 @@
     "node": ">=18.18.0"
   },
   "scripts": {
-    "dev": "bun --watch src/main.ts",
+    "dev": "bunx --bun prisma generate && bun run build && node dist/main.js",
     "dev:worker": "bun --watch src/worker.ts",
-    "build": "prisma generate && tsc -p tsconfig.build.json",
-    "start": "bun run dist/main.js",
+    "build": "bunx --bun prisma generate && tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
     "start:worker": "bun run dist/worker.js",
     "start:node": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -26,12 +26,12 @@
     "depcruise:verify": "bash scripts/verify-boundaries.sh",
     "guard:money": "bash scripts/guard-money.sh",
     "db:generate": "prisma migrate dev --name",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "bunx --bun prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "bun run scripts/seed.ts",
     "prisma:generate": "prisma generate",
-    "openapi": "bun run scripts/generate-openapi.ts > openapi.json",
+    "openapi": "bun run scripts/generate-openapi.ts",
     "verify": "bun run lint && bun run typecheck && bun run depcruise && bun run depcruise:verify && bun run guard:money && bun run test && bun run build"
   },
   "dependencies": {
@@ -44,6 +44,7 @@
     "@prisma/client": "6.16.2",
     "bullmq": "^6.3.6",
     "ioredis": "^6.0.0",
+    "jose": "^6.2.12",
     "nestjs-pino": "^5.1.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",

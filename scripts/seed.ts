@@ -1,9 +1,3 @@
-/**
- * Seeds a local database with enough data to exercise the reference Events API.
- *
- * Idempotent: safe to run repeatedly. Categories are seeded for the future catalog
- * module; one sample event demonstrates create/get/update against a populated row.
- */
 import { PrismaClient } from "@prisma/client";
 
 import { loadEnv } from "../src/config/env.js";

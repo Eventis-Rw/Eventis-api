@@ -32,8 +32,37 @@ describe("loadEnv", () => {
 
   it("refuses to boot production against the fake payment provider", () => {
     expect(() =>
-      loadEnv({ ...valid, NODE_ENV: "production", SMS_PROVIDER: "gateway" }),
+      loadEnv({
+        ...valid,
+        NODE_ENV: "production",
+        SMS_PROVIDER: "africas_talking",
+        AT_USERNAME: "sandbox",
+        AT_API_KEY: "key",
+      }),
     ).toThrow(/PAYMENT_PROVIDER/);
+  });
+
+  it("refuses africas_talking without AT credentials", () => {
+    expect(() =>
+      loadEnv({ ...valid, SMS_PROVIDER: "africas_talking" }),
+    ).toThrow(/AT_API_KEY/);
+  });
+
+  it("accepts africas_talking when AT credentials are present", () => {
+    const env = loadEnv({
+      ...valid,
+      SMS_PROVIDER: "africas_talking",
+      AT_USERNAME: "sandbox",
+      AT_API_KEY: "atsk_test",
+    });
+    expect(env.SMS_PROVIDER).toBe("africas_talking");
+    expect(env.AT_USERNAME).toBe("sandbox");
+  });
+
+  it("defaults JWT TTLs", () => {
+    const env = loadEnv(valid);
+    expect(env.JWT_ACCESS_TTL_SECONDS).toBe(900);
+    expect(env.JWT_REFRESH_TTL_SECONDS).toBe(2_592_000);
   });
 
   it("refuses a real payment provider with no webhook secret, which would accept spoofed webhooks", () => {

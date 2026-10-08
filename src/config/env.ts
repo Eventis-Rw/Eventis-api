@@ -35,6 +35,18 @@ const envSchema = z
 
     JWT_ACCESS_SECRET: z.string().min(32),
     JWT_REFRESH_SECRET: z.string().min(32),
+    JWT_ACCESS_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .max(3600)
+      .default(900),
+    JWT_REFRESH_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(3600)
+      .max(60 * 60 * 24 * 90)
+      .default(60 * 60 * 24 * 30),
 
     TICKET_SIGNING_PRIVATE_KEY: z.string().min(1),
     TICKET_SIGNING_PUBLIC_KEY: z.string().min(1),
@@ -50,7 +62,22 @@ const envSchema = z
     PAYMENT_PROVIDER_API_KEY: optionalString,
     PAYMENT_WEBHOOK_SECRET: optionalString,
 
-    SMS_PROVIDER: z.enum(["fake", "gateway"]).default("fake"),
+    /** `fake` for local/tests; `africas_talking` for real SMS via AT. */
+    SMS_PROVIDER: z.enum(["fake", "africas_talking"]).default("fake"),
+    AT_USERNAME: optionalString,
+    AT_API_KEY: optionalString,
+    /**
+     * `sandbox` → sandbox host (no real delivery).
+     * `production` → api.africastalking.com (real MTN/Airtel Rwanda delivery).
+     * Default: sandbox when AT_USERNAME=sandbox, otherwise production.
+     */
+    AT_ENV: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.enum(["sandbox", "production"]).optional(),
+    ),
+    /** Optional registered sender ID / shortcode for production SMS. */
+    AT_SENDER_ID: optionalString,
+    /** @deprecated Prefer AT_API_KEY. Kept so older .env files still boot. */
     SMS_API_KEY: optionalString,
 
     SENTRY_DSN: optionalString,
@@ -76,7 +103,23 @@ const envSchema = z
   .refine((e) => e.NODE_ENV !== "production" || e.SMS_PROVIDER !== "fake", {
     message: 'SMS_PROVIDER must not be "fake" in production',
     path: ["SMS_PROVIDER"],
-  });
+  })
+  .refine(
+    (e) => e.SMS_PROVIDER !== "africas_talking" || Boolean(e.AT_USERNAME),
+    {
+      message: "AT_USERNAME is required when SMS_PROVIDER=africas_talking",
+      path: ["AT_USERNAME"],
+    },
+  )
+  .refine(
+    (e) =>
+      e.SMS_PROVIDER !== "africas_talking" ||
+      Boolean(e.AT_API_KEY || e.SMS_API_KEY),
+    {
+      message: "AT_API_KEY is required when SMS_PROVIDER=africas_talking",
+      path: ["AT_API_KEY"],
+    },
+  );
 
 export type Env = z.infer<typeof envSchema>;
 
