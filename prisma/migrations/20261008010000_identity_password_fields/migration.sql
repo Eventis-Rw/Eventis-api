@@ -1,0 +1,2 @@
+-- This migration is intentionally empty. The password-based auth flow was removed
+-- in favor of device-bound OTP authentication, so no schema change is needed here.

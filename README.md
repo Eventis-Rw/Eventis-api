@@ -86,7 +86,10 @@ prisma/
 └── migrations/                  SQL migrations (owned, reviewable)
 ```
 
-Planned modules (`identity`, `users`, `organizations`, `catalog`, `venues`,
+Planned modules (`users`, `organizations`, `catalog`, `venues`,
+`discovery`, `ticketing`, `orders`, `payments`, `ledger`, `checkin`,
+`notifications`, `moderation`, `analytics`). **`identity`** (phone OTP + JWT)
+is implemented — see [docs/guides/auth-otp.md](docs/guides/auth-otp.md).
 `discovery`, `ticketing`, `orders`, `payments`, `ledger`, `checkin`,
 `notifications`, `moderation`, `analytics`) are documented in
 [docs/architecture/overview.md](docs/architecture/overview.md) — not as empty folders.
@@ -165,8 +168,35 @@ bun run scripts/generate-keys.ts >> .env
 docker compose -f docker/docker-compose.yml up -d
 bunx prisma generate
 bun run db:migrate && bun run db:seed
-bun run dev
+bun run build
+bun run start
 ```
+
+### Swagger / OpenAPI
+
+From the repository root, make sure the local services are running and `.env` is
+configured as described in [Quick start](#quick-start). Compile the NestJS
+TypeScript source and start the compiled server with:
+
+```bash
+bun run build
+bun run start
+```
+
+Once the terminal reports that the API is listening, open either URL:
+
+- **Swagger UI:** [http://localhost:3000/docs](http://localhost:3000/docs)
+- **OpenAPI JSON:** [http://localhost:3000/openapi.json](http://localhost:3000/openapi.json)
+
+The UI lets you inspect endpoint payloads and responses, then use **Try it out** to
+send requests to the local API. For authenticated routes, first obtain an access
+token from the OTP flow, click **Authorize**, and enter the token. Swagger UI loads
+its assets from a CDN and needs an internet connection; the OpenAPI JSON can be
+opened directly or imported into another API client. See the
+[API reference and testing flow](docs/api-reference.md) for route inventory and
+example requests. `bun run openapi` only regenerates the `openapi.json` file; it does
+not start the API or open Swagger. Restart the built API to serve the docs after
+changing the document.
 
 ```bash
 curl localhost:3000/healthz
