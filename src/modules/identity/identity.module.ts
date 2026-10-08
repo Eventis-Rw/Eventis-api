@@ -4,15 +4,17 @@ import { ENV, type Env } from "../../config/env.js";
 import { PlatformModule } from "../platform/index.js";
 
 import { AuthController } from "./api/auth.controller.js";
-import { UsersController } from "./api/users.controller.js";
 import { JwtAuthGuard } from "./api/jwt-auth.guard.js";
+import { UsersController } from "./api/users.controller.js";
 import { GetMeService } from "./application/get-me.service.js";
 import { LoginService } from "./application/login.service.js";
 import { LogoutService } from "./application/logout.service.js";
 import { RefreshTokenService } from "./application/refresh-token.service.js";
 import { RequestOtpService } from "./application/request-otp.service.js";
-import { VerifyOtpService } from "./application/verify-otp.service.js";
 import { UpdateProfileService } from "./application/update-profile.service.js";
+import { UserDevicesService } from "./application/user-devices.service.js";
+import { VerifyAccessTokenService } from "./application/verify-access-token.service.js";
+import { VerifyOtpService } from "./application/verify-otp.service.js";
 import {
   OtpRepository,
   RefreshSessionRepository,
@@ -34,6 +36,8 @@ import { TokenService } from "./infrastructure/token.service.js";
     GetMeService,
     LoginService,
     UpdateProfileService,
+    UserDevicesService,
+    VerifyAccessTokenService,
     OtpRepository,
     UserRepository,
     RefreshSessionRepository,

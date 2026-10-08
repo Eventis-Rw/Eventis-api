@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
 import type { SessionUser } from "@eventis/contracts";
+import { Injectable } from "@nestjs/common";
 
 import { AppError } from "../../../common/errors/app-error.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";

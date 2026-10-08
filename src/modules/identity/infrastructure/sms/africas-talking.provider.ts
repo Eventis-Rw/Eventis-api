@@ -1,25 +1,11 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ERROR_CODES, maskPhone } from "@eventis/contracts";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 
 import { AppError } from "../../../../common/errors/app-error.js";
 import { ENV, type Env } from "../../../../config/env.js";
 
 import type { SendSmsInput, SmsProvider } from "./sms-provider.js";
 
-/**
- * Africa's Talking SMS gateway — production path for real Rwanda delivery:
- *
- *   Backend → generate OTP → AT Production API → MTN/Airtel Rwanda → phone
- *
- * Endpoints:
- *   - production: https://api.africastalking.com/version1/messaging
- *   - sandbox:    https://api.sandbox.africastalking.com/version1/messaging
- *
- * Credentials come only from env (AT_USERNAME / AT_API_KEY). Never hard-code
- * keys, never return them in API responses, never log message bodies (OTPs).
- *
- * Docs: https://developers.africastalking.com/docs/sms/sending/bulk
- */
 @Injectable()
 export class AfricasTalkingSmsProvider implements SmsProvider {
   private readonly logger = new Logger(AfricasTalkingSmsProvider.name);
@@ -27,7 +13,9 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
   constructor(@Inject(ENV) private readonly env: Env) {}
 
   private resolveEndpoint(): string {
-    const mode = this.env.AT_ENV ?? (this.env.AT_USERNAME === "sandbox" ? "sandbox" : "production");
+    const mode =
+      this.env.AT_ENV ??
+      (this.env.AT_USERNAME === "sandbox" ? "sandbox" : "production");
     return mode === "sandbox"
       ? "https://api.sandbox.africastalking.com/version1/messaging"
       : "https://api.africastalking.com/version1/messaging";
@@ -52,7 +40,6 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
       message: input.message,
     });
 
-    // Production sender ID / shortcode (registered in AT dashboard). Optional in sandbox.
     if (this.env.AT_SENDER_ID) {
       body.set("from", this.env.AT_SENDER_ID);
     }
@@ -83,7 +70,6 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
 
     const responseText = await response.text();
     if (!response.ok) {
-      // Do not log response body — may echo the message/OTP.
       this.logger.warn(
         {
           status: response.status,
@@ -100,7 +86,6 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
       );
     }
 
-    // AT returns 201 with JSON; treat recipient-level failures as send failures.
     try {
       const parsed = JSON.parse(responseText) as {
         SMSMessageData?: {
@@ -125,7 +110,6 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
       }
     } catch (error) {
       if (error instanceof AppError) throw error;
-      // Non-JSON success bodies are still accepted — AT format can vary.
     }
 
     this.logger.log(

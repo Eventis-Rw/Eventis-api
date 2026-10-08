@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import { ERROR_CODES, type OtpVerify } from "@eventis/contracts";
 import { randomUUID } from "node:crypto";
+
+import { ERROR_CODES, type OtpVerify } from "@eventis/contracts";
+import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";

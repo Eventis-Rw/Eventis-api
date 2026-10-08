@@ -1,13 +1,4 @@
 import {
-  Body,
-  Controller,
-  Get,
-  Headers,
-  HttpCode,
-  Post,
-  UseGuards,
-} from "@nestjs/common";
-import {
   logoutRequest,
   otpRequest,
   otpVerify,
@@ -21,15 +12,24 @@ import {
   type RefreshRequest,
   type SessionUser,
 } from "@eventis/contracts";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { z } from "zod";
 
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
 import { GetMeService } from "../application/get-me.service.js";
+import { LoginService } from "../application/login.service.js";
 import { LogoutService } from "../application/logout.service.js";
 import { RefreshTokenService } from "../application/refresh-token.service.js";
 import { RequestOtpService } from "../application/request-otp.service.js";
 import { VerifyOtpService } from "../application/verify-otp.service.js";
-import { LoginService } from "../application/login.service.js";
 
 import { CurrentUserId, JwtAuthGuard } from "./jwt-auth.guard.js";
 

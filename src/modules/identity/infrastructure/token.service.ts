@@ -1,14 +1,11 @@
+import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 import { SignJWT, jwtVerify, errors as JoseErrors } from "jose";
-import { ERROR_CODES } from "@eventis/contracts";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, loadEnv, type Env } from "../../../config/env.js";
-import {
-  generateRefreshToken,
-  hashSecret,
-} from "../domain/otp.js";
+import { generateRefreshToken, hashSecret } from "../domain/otp.js";
 
 export interface AccessTokenClaims {
   sub: string;
@@ -26,12 +23,6 @@ export interface IssuedRefreshToken {
   expiresAt: Date;
 }
 
-/**
- * JWT access tokens + opaque refresh tokens (ADR 0006).
- *
- * Access payload carries only `sub` (user id) and `deviceId` — never phone, OTP,
- * or secrets. Refresh tokens are random opaques; only their HMAC hash is stored.
- */
 @Injectable()
 export class TokenService {
   private readonly env: Env;
@@ -47,8 +38,7 @@ export class TokenService {
     const resolved = env ?? loadEnv(process.env);
     this.env = resolved;
     this.accessSecret = new TextEncoder().encode(resolved.JWT_ACCESS_SECRET);
-    // Derive purpose-specific peppers so a leak of one hash type does not
-    // trivially open the others. Secrets never leave this process.
+
     this.refreshPepper = `${resolved.JWT_REFRESH_SECRET}:refresh`;
     this.otpPepper = `${resolved.JWT_REFRESH_SECRET}:otp`;
     this.devicePepper = `${resolved.JWT_REFRESH_SECRET}:device`;

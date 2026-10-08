@@ -1,9 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
 import {
   ERROR_CODES,
   type OtpRequest,
   type OtpRequestResponse,
 } from "@eventis/contracts";
+import { Inject, Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
@@ -19,14 +19,13 @@ import {
   normalizeRwandaPhone,
   PhoneNormalizationError,
 } from "../domain/phone.js";
-import { OtpRepository } from "../infrastructure/identity.repository.js";
+import { OtpRepository, UserRepository  } from "../infrastructure/identity.repository.js";
 import {
   SMS_PROVIDER,
   buildOtpSmsMessage,
   type SmsProvider,
 } from "../infrastructure/sms/sms-provider.js";
 import { TokenService } from "../infrastructure/token.service.js";
-import { UserRepository } from "../infrastructure/identity.repository.js";
 
 @Injectable()
 export class RequestOtpService {

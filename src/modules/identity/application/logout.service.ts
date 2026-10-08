@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
 import type { LogoutRequest } from "@eventis/contracts";
+import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { RefreshSessionRepository } from "../infrastructure/identity.repository.js";

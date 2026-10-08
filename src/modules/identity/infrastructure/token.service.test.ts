@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { SignJWT } from "jose";
 
 import { ERROR_CODES } from "@eventis/contracts";
+import { SignJWT } from "jose";
 
 import { SystemClock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { loadEnv } from "../../../config/env.js";
+
 import { TokenService } from "./token.service.js";
 
 describe("TokenService", () => {
@@ -26,7 +27,6 @@ describe("TokenService", () => {
     SMS_PROVIDER: "fake",
   });
 
-  // jose validates exp against wall-clock time, so use SystemClock here.
   const clock = new SystemClock();
   let tokens: TokenService;
 

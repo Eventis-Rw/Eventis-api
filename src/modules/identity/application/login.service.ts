@@ -1,12 +1,14 @@
-import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { AppError } from "../../../common/errors/app-error.js";
+
+import { Injectable } from "@nestjs/common";
+
 import { Clock } from "../../../common/clock.js";
+import { AppError } from "../../../common/errors/app-error.js";
+import { secretMatches } from "../domain/otp.js";
 import {
   normalizeRwandaPhone,
   PhoneNormalizationError,
 } from "../domain/phone.js";
-import { secretMatches } from "../domain/otp.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";
 import { TokenService } from "../infrastructure/token.service.js";
 import { toAuthSession, toAuthTokens } from "../mappers/auth.mapper.js";

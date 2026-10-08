@@ -2,8 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 
 import { AppError } from "../../../common/errors/app-error.js";
-import { UserRepository } from "../infrastructure/identity.repository.js";
 import type { User } from "../domain/user.js";
+import { UserRepository } from "../infrastructure/identity.repository.js";
 import { toProfileResponse } from "../mappers/auth.mapper.js";
 
 export const updateProfileSchema = z
@@ -16,7 +16,34 @@ export const updateProfileSchema = z
     accountType: z.enum(["POSTER", "LOVE"]).optional(),
     organizationName: z.string().trim().max(160).nullable().optional(),
     organizationDescription: z.string().trim().max(10000).nullable().optional(),
-    dateOfBirth: z.iso.date().nullable().optional(),
+    dateOfBirth: z
+      .string()
+      .regex(
+        /^\d{4}[-\u002F]\d{2}[-\u002F]\d{2}$/,
+        "Use YYYY-MM-DD or YYYY/MM/DD",
+      )
+      .refine((value) => {
+        const normalized = value.replaceAll("/", "-");
+        const parts = normalized.split("-").map(Number);
+        if (
+          parts.length !== 3 ||
+          parts.some((part) => !Number.isInteger(part))
+        ) {
+          return false;
+        }
+        const year = parts[0]!;
+        const month = parts[1]!;
+        const day = parts[2]!;
+        const date = new Date(Date.UTC(year, month - 1, day));
+        return (
+          date.getUTCFullYear() === year &&
+          date.getUTCMonth() === month - 1 &&
+          date.getUTCDate() === day
+        );
+      }, "Enter a valid calendar date")
+      .transform((value) => value.replaceAll("/", "-"))
+      .nullable()
+      .optional(),
     gender: z.string().trim().max(30).nullable().optional(),
     bio: z.string().trim().max(10000).nullable().optional(),
     location: z.string().trim().max(160).nullable().optional(),
@@ -30,28 +57,28 @@ export const updateProfileSchema = z
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 type EditableUserProfile = {
   -readonly [
-  Key in keyof Pick<
-    User,
-    | "firstName"
-    | "lastName"
-    | "displayName"
-    | "email"
-    | "avatarUrl"
-    | "accountType"
-    | "organizationName"
-    | "organizationDescription"
-    | "dateOfBirth"
-    | "gender"
-    | "bio"
-    | "location"
-    | "interestedIn"
-  >
+    Key in keyof Pick<
+      User,
+      | "firstName"
+      | "lastName"
+      | "displayName"
+      | "email"
+      | "avatarUrl"
+      | "accountType"
+      | "organizationName"
+      | "organizationDescription"
+      | "dateOfBirth"
+      | "gender"
+      | "bio"
+      | "location"
+      | "interestedIn"
+    >
   ]?: User[Key];
 };
 
 @Injectable()
 export class UpdateProfileService {
-  constructor(private readonly users: UserRepository) { }
+  constructor(private readonly users: UserRepository) {}
 
   async execute(userId: string, input: UpdateProfileInput) {
     try {
@@ -67,9 +94,19 @@ export class UpdateProfileService {
       if (input.organizationDescription !== undefined)
         data.organizationDescription = input.organizationDescription;
       if (input.dateOfBirth !== undefined) {
-        data.dateOfBirth = input.dateOfBirth
-          ? new Date(`${input.dateOfBirth}T00:00:00.000Z`)
-          : null;
+        if (input.dateOfBirth) {
+          const parts = input.dateOfBirth.split("-").map((p) => Number(p));
+          if (parts.length === 3 && parts.every((n) => Number.isInteger(n))) {
+            const y = parts[0]!;
+            const m = parts[1]!;
+            const d = parts[2]!;
+            data.dateOfBirth = new Date(Date.UTC(y, m - 1, d));
+          } else {
+            data.dateOfBirth = null;
+          }
+        } else {
+          data.dateOfBirth = null;
+        }
       }
       if (input.gender !== undefined) data.gender = input.gender;
       if (input.bio !== undefined) data.bio = input.bio;

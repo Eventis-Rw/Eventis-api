@@ -96,7 +96,7 @@ enum OtpPurpose {
   @@map("otp_purpose")
 }
 
-/// Phone-first account. Email and richer profile fields belong in a later users module.
+
 model User {
   id                      String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   phone                   String      @unique @db.VarChar(30)
@@ -130,7 +130,7 @@ enum AccountType {
   @@map("account_type")
 }
 
-/// Hashed OTP codes. The raw code is never stored and never logged.
+
 model OtpVerification {
   id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   phone       String       @db.VarChar(30)
@@ -150,9 +150,7 @@ model OtpVerification {
   @@map("otp_verifications")
 }
 
-/// Each trusted device is stored as its own row so a user can have up to three
-/// active devices while each device keeps its own credential, last-seen status,
-/// and revocation state.
+
 model UserDevice {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId         String    @map("user_id") @db.Uuid
@@ -175,8 +173,7 @@ model UserDevice {
   @@map("user_devices")
 }
 
-/// Refresh-token session family. Rotation + reuse detection (ADR 0006).
-/// Only the hash of the refresh token is stored — never the raw token.
+
 model RefreshSession {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String    @map("user_id") @db.Uuid
@@ -195,7 +192,7 @@ model RefreshSession {
   @@map("refresh_sessions")
 }
 
-// ---------- Events (reference module) ----------
+
 
 enum EventStatus {
   draft

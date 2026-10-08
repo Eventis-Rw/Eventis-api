@@ -17,10 +17,11 @@ import {
   expect,
   it,
 } from "bun:test";
+
 import { ERROR_CODES } from "@eventis/contracts";
 
 import { FixedClock } from "../../src/common/clock.js";
-import { AppError } from "../../src/common/errors/app-error.js";
+import { type AppError } from "../../src/common/errors/app-error.js";
 import { loadEnv } from "../../src/config/env.js";
 import { PrismaService } from "../../src/infrastructure/database/prisma.service.js";
 import { GetMeService } from "../../src/modules/identity/application/get-me.service.js";
@@ -28,8 +29,8 @@ import { LoginService } from "../../src/modules/identity/application/login.servi
 import { LogoutService } from "../../src/modules/identity/application/logout.service.js";
 import { RefreshTokenService } from "../../src/modules/identity/application/refresh-token.service.js";
 import { RequestOtpService } from "../../src/modules/identity/application/request-otp.service.js";
-import { VerifyOtpService } from "../../src/modules/identity/application/verify-otp.service.js";
 import { UpdateProfileService } from "../../src/modules/identity/application/update-profile.service.js";
+import { VerifyOtpService } from "../../src/modules/identity/application/verify-otp.service.js";
 import {
   OtpRepository,
   RefreshSessionRepository,
@@ -57,7 +58,8 @@ describe("identity auth integration", () => {
   beforeAll(async () => {
     process.env.SMS_PROVIDER = "fake";
     process.env.NODE_ENV ??= "test";
-    process.env.DATABASE_URL ??= "postgresql://postgres:postgres@localhost:5432/eventis_test";
+    process.env.DATABASE_URL ??=
+      "postgresql://postgres:postgres@localhost:5432/eventis_test";
     process.env.REDIS_URL ??= "redis://localhost:6379";
     process.env.JWT_ACCESS_SECRET ??= "a".repeat(32);
     process.env.JWT_REFRESH_SECRET ??= "b".repeat(32);
@@ -74,16 +76,16 @@ describe("identity auth integration", () => {
 
     const env = loadEnv({
       NODE_ENV: "test",
-      DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/eventis_test",
-      REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
-      JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ?? "a".repeat(32),
-      JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "b".repeat(32),
-      TICKET_SIGNING_PRIVATE_KEY: process.env.TICKET_SIGNING_PRIVATE_KEY ?? "priv",
-      TICKET_SIGNING_PUBLIC_KEY: process.env.TICKET_SIGNING_PUBLIC_KEY ?? "pub",
-      STORAGE_ENDPOINT: process.env.STORAGE_ENDPOINT ?? "http://localhost:9000",
-      STORAGE_BUCKET: process.env.STORAGE_BUCKET ?? "eventis-dev",
-      STORAGE_ACCESS_KEY_ID: process.env.STORAGE_ACCESS_KEY_ID ?? "key",
-      STORAGE_SECRET_ACCESS_KEY: process.env.STORAGE_SECRET_ACCESS_KEY ?? "secret",
+      DATABASE_URL: process.env.DATABASE_URL,
+      REDIS_URL: process.env.REDIS_URL,
+      JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
+      JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+      TICKET_SIGNING_PRIVATE_KEY: process.env.TICKET_SIGNING_PRIVATE_KEY,
+      TICKET_SIGNING_PUBLIC_KEY: process.env.TICKET_SIGNING_PUBLIC_KEY,
+      STORAGE_ENDPOINT: process.env.STORAGE_ENDPOINT,
+      STORAGE_BUCKET: process.env.STORAGE_BUCKET,
+      STORAGE_ACCESS_KEY_ID: process.env.STORAGE_ACCESS_KEY_ID,
+      STORAGE_SECRET_ACCESS_KEY: process.env.STORAGE_SECRET_ACCESS_KEY,
       SMS_PROVIDER: "fake",
     });
 
@@ -93,7 +95,13 @@ describe("identity auth integration", () => {
     const userRepo = new UserRepository(prisma);
     const sessionRepo = new RefreshSessionRepository(prisma);
 
-    requestOtp = new RequestOtpService(otpRepo, userRepo, tokens, fakeSms, clock);
+    requestOtp = new RequestOtpService(
+      otpRepo,
+      userRepo,
+      tokens,
+      fakeSms,
+      clock,
+    );
     verifyOtp = new VerifyOtpService(otpRepo, userRepo, tokens, clock);
     refresh = new RefreshTokenService(sessionRepo, userRepo, tokens, clock);
     logout = new LogoutService(sessionRepo, tokens, clock);
@@ -112,7 +120,7 @@ describe("identity auth integration", () => {
   });
 
   afterAll(async () => {
-    await prisma?.$disconnect();
+    await prisma.$disconnect();
   });
 
   async function requestAndReadCode(deviceId = DEVICE_A): Promise<string> {
@@ -307,6 +315,76 @@ describe("identity auth integration", () => {
     expect(profile.organizationName).toBe("Tech Hub");
   });
 
+  it("persists a complete profile payload", async () => {
+    const code = await requestAndReadCode();
+    const session = await verifyOtp.execute({
+      phone: PHONE,
+      code,
+      deviceId: DEVICE_A,
+    });
+    const payload = {
+      firstName: "Aline",
+      lastName: "Uwase",
+      displayName: "irakoze",
+      email: null,
+      accountType: "LOVE",
+      avatarUrl: null,
+      organizationName: null,
+      organizationDescription: null,
+      dateOfBirth: null,
+      gender: null,
+      bio: null,
+      location: "Kigali",
+      interestedIn: null,
+    } as const;
+
+    const profile = await updateProfile.execute(session.user.id, payload);
+    const stored = await prisma.user.findUnique({ where: { phone: PHONE } });
+
+    expect(profile.firstName).toBe(payload.firstName);
+    expect(profile.lastName).toBe(payload.lastName);
+    expect(profile.displayName).toBe(payload.displayName);
+    expect(profile.accountType).toBe(payload.accountType);
+    expect(profile.location).toBe(payload.location);
+
+    expect(stored?.firstName).toBe(payload.firstName);
+    expect(stored?.lastName).toBe(payload.lastName);
+    expect(stored?.displayName).toBe(payload.displayName);
+    expect(stored?.accountType).toBe(payload.accountType);
+    expect(stored?.location).toBe(payload.location);
+  });
+
+  it("partial PATCH preserves existing fields", async () => {
+    const code = await requestAndReadCode();
+    const session = await verifyOtp.execute({
+      phone: PHONE,
+      code,
+      deviceId: DEVICE_A,
+    });
+
+    await updateProfile.execute(session.user.id, {
+      firstName: "Aline",
+      lastName: "Uwase",
+      displayName: "irakoze",
+      accountType: "LOVE",
+      location: "Kigali",
+    } as any);
+
+    const updated = await updateProfile.execute(session.user.id, {
+      displayName: "New Name",
+    });
+    const stored = await prisma.user.findUnique({ where: { phone: PHONE } });
+
+    expect(updated.displayName).toBe("New Name");
+
+    expect(updated.firstName).toBe("Aline");
+    expect(updated.lastName).toBe("Uwase");
+    expect(updated.accountType).toBe("LOVE");
+    expect(stored?.displayName).toBe("New Name");
+    expect(stored?.firstName).toBe("Aline");
+    expect(stored?.lastName).toBe("Uwase");
+  });
+
   it("rejects expired OTP", async () => {
     const code = await requestAndReadCode();
     clock.advanceMs(6 * 60 * 1000);
@@ -343,7 +421,7 @@ describe("identity auth integration", () => {
           deviceId: DEVICE_A,
         });
       } catch {
-        // expected
+        // Expected for an invalid or expired device credential.
       }
     }
     try {

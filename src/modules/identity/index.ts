@@ -1,7 +1,3 @@
-/**
- * Public surface of the identity module. Other modules import use-case services
- * from here — never repositories or Prisma.
- */
 export { IdentityModule } from "./identity.module.js";
 export { RequestOtpService } from "./application/request-otp.service.js";
 export { VerifyOtpService } from "./application/verify-otp.service.js";

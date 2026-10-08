@@ -8,10 +8,8 @@ import {
 import type { FastifyRequest } from "fastify";
 
 import { AppError } from "../../../common/errors/app-error.js";
-import {
-  TokenService,
-  type AccessTokenClaims,
-} from "../infrastructure/token.service.js";
+import { VerifyAccessTokenService } from "../application/verify-access-token.service.js";
+import type { AccessTokenClaims } from "../application/verify-access-token.service.js";
 
 export type AuthenticatedRequest = FastifyRequest & {
   auth?: AccessTokenClaims;
@@ -19,7 +17,7 @@ export type AuthenticatedRequest = FastifyRequest & {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly tokens: TokenService) { }
+  constructor(private readonly verifyAccessToken: VerifyAccessTokenService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
@@ -31,7 +29,7 @@ export class JwtAuthGuard implements CanActivate {
     if (!token) {
       throw AppError.unauthenticated();
     }
-    request.auth = await this.tokens.verifyAccessToken(token);
+    request.auth = await this.verifyAccessToken.execute(token);
     return true;
   }
 }
@@ -45,6 +43,5 @@ export const CurrentUserId = createParamDecorator(
     return request.auth.sub;
   },
 );
-
 
 export const JWT_AUTH_GUARD: Type<CanActivate> = JwtAuthGuard;

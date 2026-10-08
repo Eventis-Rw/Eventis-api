@@ -2,10 +2,7 @@ import type { AuthSession, AuthTokens, SessionUser } from "@eventis/contracts";
 
 import type { AccountType, User } from "../domain/user.js";
 
-/**
- * Map domain User → SessionUser contract. Never return a Prisma row.
- * Roles default to customer until an RBAC module owns memberships.
- */
+
 export function toSessionUser(user: User): SessionUser {
   return {
     id: user.id,
@@ -17,7 +14,7 @@ export function toSessionUser(user: User): SessionUser {
   };
 }
 
-/** Safe profile projection. Never serialize the persistence entity itself. */
+
 export function toProfileResponse(user: User) {
   return {
     id: user.id,

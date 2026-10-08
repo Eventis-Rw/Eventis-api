@@ -10,13 +10,13 @@ import {
 import { z } from "zod";
 
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
-import { Clock } from "../../../common/clock.js";
-import { UserRepository } from "../infrastructure/identity.repository.js";
 import {
   UpdateProfileService,
   updateProfileSchema,
   type UpdateProfileInput,
 } from "../application/update-profile.service.js";
+import { UserDevicesService } from "../application/user-devices.service.js";
+
 import { CurrentUserId, JwtAuthGuard } from "./jwt-auth.guard.js";
 
 const deviceUpdateSchema = z.object({
@@ -31,9 +31,8 @@ const deviceUpdateSchema = z.object({
 export class UsersController {
   constructor(
     private readonly updateProfile: UpdateProfileService,
-    private readonly users: UserRepository,
-    private readonly clock: Clock,
-  ) { }
+    private readonly devices: UserDevicesService,
+  ) {}
 
   @Patch("me")
   async patchMe(
@@ -45,7 +44,7 @@ export class UsersController {
 
   @Get("me/devices")
   async listDevices(@CurrentUserId() userId: string) {
-    return this.users.findActiveDevicesByUserId(userId);
+    return this.devices.list(userId);
   }
 
   @Patch("me/devices/:deviceId")
@@ -54,16 +53,7 @@ export class UsersController {
     @Param("deviceId") deviceId: string,
     @Body(zodPipe(deviceUpdateSchema)) body: z.infer<typeof deviceUpdateSchema>,
   ) {
-    const updated = await this.users.updateDevice(userId, deviceId, {
-      deviceName: body.deviceName ?? null,
-      platform: body.platform ?? null,
-      osVersion: body.osVersion ?? null,
-      appVersion: body.appVersion ?? null,
-    });
-    if (!updated) {
-      throw new Error("Device not found");
-    }
-    return updated;
+    return this.devices.update(userId, deviceId, body);
   }
 
   @Delete("me/devices/:deviceId")
@@ -71,10 +61,6 @@ export class UsersController {
     @CurrentUserId() userId: string,
     @Param("deviceId") deviceId: string,
   ) {
-    const revoked = await this.users.revokeDevice(userId, deviceId, this.clock.now());
-    if (!revoked) {
-      throw new Error("Device not found");
-    }
-    return { revoked: true, deviceId };
+    return this.devices.revoke(userId, deviceId);
   }
 }
