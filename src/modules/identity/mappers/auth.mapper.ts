@@ -9,7 +9,12 @@ export function toSessionUser(user: User): SessionUser {
     phone: user.phone,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
-    roles: [user.accountType === "POSTER" ? "organizer_owner" : "customer"],
+    roles: [
+      ...(user.role === "ADMIN" ? (["admin"] as const) : []),
+      ...(user.accountType === "POSTER"
+        ? (["organizer_owner"] as const)
+        : (["customer"] as const)),
+    ],
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -32,6 +37,8 @@ export function toProfileResponse(user: User) {
     bio: user.bio,
     location: user.location,
     interestedIn: user.interestedIn,
+    role: user.role,
+    status: user.status,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
@@ -54,7 +61,6 @@ export function toAuthTokens(input: {
 export function toAuthSession(input: {
   user: User;
   tokens: AuthTokens;
-  deviceCredential?: string;
 }): AuthSessionResponse {
   return {
     user: {
@@ -63,9 +69,6 @@ export function toAuthSession(input: {
       accountType: input.user.accountType,
     },
     tokens: input.tokens,
-    ...(input.deviceCredential
-      ? { deviceCredential: input.deviceCredential }
-      : {}),
   };
 }
 

@@ -17,10 +17,9 @@ export class ListEventsService {
   constructor(private readonly events: EventRepository) {}
 
   async execute(input: ListEventsInput) {
-    const status =
-      input.includeNonPublished && input.status
-        ? input.status
-        : ("published" as const);
+    const status = input.includeNonPublished
+      ? input.status
+      : ("published" as const);
 
     return this.events.list({
       page: input.page,

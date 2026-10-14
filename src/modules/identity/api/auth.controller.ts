@@ -1,14 +1,10 @@
 import {
   logoutRequest,
-  otpRequest,
-  otpVerify,
   refreshRequest,
   type AuthSession,
   type AuthTokens,
   type LogoutRequest,
-  type OtpRequest,
   type OtpRequestResponse,
-  type OtpVerify,
   type RefreshRequest,
   type SessionUser,
 } from "@eventis/contracts";
@@ -16,7 +12,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   Post,
   UseGuards,
@@ -33,17 +28,17 @@ import { VerifyOtpService } from "../application/verify-otp.service.js";
 
 import { CurrentUserId, JwtAuthGuard } from "./jwt-auth.guard.js";
 
-const verifyOtpRequest = otpVerify.extend({
-  displayName: z.string().trim().min(2).max(60).optional(),
-});
-const verifySignupRequest = otpVerify.omit({ deviceId: true }).extend({
-  displayName: z.string().trim().min(2).max(60).optional(),
-});
+const phone = z.string().trim().regex(/^\+[1-9]\d{7,14}$/, "Enter a valid phone number");
+const otpCode = z.string().regex(/^\d{6}$/, "OTP must contain exactly 6 digits");
+const pin = z.string().regex(/^\d{5}$/, "PIN must contain exactly 5 digits");
+const verifyOtpRequest = z.object({ phone, code: otpCode, pin });
+const verifySignupRequest = z.object({ phone, code: otpCode });
 const signupRequest = z.object({
-  phone: otpRequest.shape.phone,
+  phone,
   username: z.string().trim().min(2).max(100).optional(),
   firstName: z.string().trim().min(2).max(100).optional(),
-  accountType: z.enum(["POSTER", "LOVE"]).default("LOVE"),
+  accountType: z.enum(["POSTER", "CUSTOMER"]).default("CUSTOMER"),
+  pin,
 }).refine((value) => Boolean(value.username ?? value.firstName), {
   message: "username is required",
   path: ["username"],
@@ -51,11 +46,14 @@ const signupRequest = z.object({
   ...value,
   firstName: username ?? firstName!,
 }));
-const deviceIdHeader = z.string().trim().min(8).max(128);
-const deviceCredentialHeader = z.string().min(32).max(256);
 const loginRequest = z.object({
-  phone: otpRequest.shape.phone,
+  phone,
+  pin,
 });
+const resetPinRequest = z.object({
+  phone,
+});
+const resetPinVerifyRequest = z.object({ phone, code: otpCode, pin });
 
 @Controller({ path: "auth", version: "1" })
 export class AuthController {
@@ -70,7 +68,7 @@ export class AuthController {
 
   @Post("request-otp")
   async request(
-    @Body(zodPipe(otpRequest)) body: OtpRequest,
+    @Body(zodPipe(resetPinRequest)) body: z.infer<typeof resetPinRequest>,
   ): Promise<OtpRequestResponse> {
     return this.requestOtp.execute(body);
   }
@@ -78,49 +76,53 @@ export class AuthController {
   @Post("login")
   async login(
     @Body(zodPipe(loginRequest)) body: z.infer<typeof loginRequest>,
-    @Headers() headers: Record<string, string | string[] | undefined>,
   ): Promise<AuthSession> {
-    const deviceId = zodPipe(deviceIdHeader).transform(headers["x-device-id"]);
-    const deviceCredential = zodPipe(deviceCredentialHeader).transform(
-      headers["x-device-credential"],
-    );
-    return this.loginService.execute({ ...body, deviceId, deviceCredential });
+    return this.loginService.execute(body);
+  }
+
+  @Post("request-pin-reset")
+  async requestPinReset(
+    @Body(zodPipe(resetPinRequest)) body: z.infer<typeof resetPinRequest>,
+  ): Promise<OtpRequestResponse> {
+    return this.requestOtp.execute(body);
+  }
+
+  @Post("reset-pin")
+  async resetPin(
+    @Body(zodPipe(resetPinVerifyRequest))
+    body: z.infer<typeof resetPinVerifyRequest>,
+  ): Promise<AuthSession> {
+    return this.verifyOtp.execute(body, "SIGN_IN");
   }
 
   @Post("signup")
   async signup(
     @Body(zodPipe(signupRequest)) body: z.infer<typeof signupRequest>,
-    @Headers() headers: Record<string, string | string[] | undefined>,
   ): Promise<OtpRequestResponse> {
-    const deviceId = zodPipe(deviceIdHeader).transform(headers["x-device-id"]);
-    return this.requestOtp.execute({ ...body, deviceId });
+    return this.requestOtp.execute(body);
   }
 
   @Post("signup/send-otp")
   async signupSendOtp(
     @Body(zodPipe(signupRequest)) body: z.infer<typeof signupRequest>,
-    @Headers() headers: Record<string, string | string[] | undefined>,
   ): Promise<OtpRequestResponse> {
-    const deviceId = zodPipe(deviceIdHeader).transform(headers["x-device-id"]);
-    return this.requestOtp.execute({ ...body, deviceId });
+    return this.requestOtp.execute(body);
   }
 
   @Post("signup/verify-otp")
   async signupVerify(
     @Body(zodPipe(verifySignupRequest))
-    body: OtpVerify & { displayName?: string },
-    @Headers() headers: Record<string, string | string[] | undefined>,
+    body: z.infer<typeof verifySignupRequest>,
   ): Promise<AuthSession> {
-    const deviceId = zodPipe(deviceIdHeader).transform(headers["x-device-id"]);
-    return this.verifyOtp.execute({ ...body, deviceId }, "SIGN_UP");
+    return this.verifyOtp.execute(body, "SIGN_UP");
   }
 
   @Post("verify-otp")
   async verify(
     @Body(zodPipe(verifyOtpRequest))
-    body: OtpVerify & { displayName?: string },
+    body: z.infer<typeof verifyOtpRequest>,
   ): Promise<AuthSession> {
-    return this.verifyOtp.execute(body);
+    return this.verifyOtp.execute(body, "SIGN_IN");
   }
 
   @Post("refresh")

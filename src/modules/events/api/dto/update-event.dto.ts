@@ -33,7 +33,6 @@ export const updateEventDto = z.object({
     .regex(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, "time must be in HH:mm format (e.g. 18:00)")
     .optional(),
   status: z.enum(EVENT_STATUSES).optional(),
-  cover_image: z.null().optional(),
 });
 
 export type UpdateEventDto = z.infer<typeof updateEventDto>;

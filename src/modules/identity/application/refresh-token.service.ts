@@ -56,7 +56,6 @@ export class RefreshTokenService {
       oldSessionId: session.id,
       userId: session.userId,
       familyId: session.familyId,
-      deviceId: session.deviceId,
       newTokenHash: next.tokenHash,
       expiresAt: next.expiresAt,
       now,
@@ -64,7 +63,6 @@ export class RefreshTokenService {
 
     const access = await this.tokens.issueAccessToken({
       sub: user.id,
-      deviceId: session.deviceId,
       role: user.accountType === "POSTER" ? "organizer_owner" : "customer",
     });
 

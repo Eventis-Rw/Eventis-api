@@ -6,9 +6,9 @@ import { LoggerModule } from "nestjs-pino";
 import { ConfigModule } from "./config/config.module.js";
 import { ENV, type Env } from "./config/env.js";
 import { PrismaModule } from "./infrastructure/database/prisma.module.js";
-import { StorageModule } from "./infrastructure/storage/storage.module.js";
-import { EventsModule } from "./modules/events/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
+import { EventsModule } from "./modules/events/index.js";
+import { StorageModule } from "./infrastructure/storage/storage.module.js";
 import { PlatformModule } from "./modules/platform/index.js";
 
 
@@ -34,7 +34,6 @@ import { PlatformModule } from "./modules/platform/index.js";
               "req.body.code",
               "req.body.payerPhone",
               "req.body.refreshToken",
-              "req.body.deviceCredential",
               'res.headers["set-cookie"]',
             ],
             censor: "[redacted]",
@@ -52,8 +51,8 @@ import { PlatformModule } from "./modules/platform/index.js";
     PrismaModule,
     StorageModule,
     PlatformModule,
-    EventsModule,
     IdentityModule,
+    EventsModule,
   ],
 })
 export class AppModule {}

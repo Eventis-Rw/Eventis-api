@@ -45,6 +45,8 @@ export class UpdateEventService {
       this.storage.validateImage(input.coverFile);
     }
 
+    let uploadedCover: string | null = null;
+    let persistedCover = false;
     try {
       let nextCover = input.coverImage;
       if (input.coverFile) {
@@ -52,6 +54,7 @@ export class UpdateEventService {
           existing.eventId,
           input.coverFile,
         );
+        uploadedCover = nextCover;
       }
 
       const next = applyEventUpdate(existing, {
@@ -75,6 +78,7 @@ export class UpdateEventService {
         time: next.time,
         status: next.status,
       });
+      persistedCover = true;
 
       if (
         input.coverFile &&
@@ -86,6 +90,13 @@ export class UpdateEventService {
 
       return updated;
     } catch (error) {
+      if (uploadedCover && !persistedCover) {
+        try {
+          await this.storage.deleteFile(uploadedCover);
+        } catch {
+          // Preserve the original database or upload error.
+        }
+      }
       if (
         error instanceof Error &&
         /cannot transition|Invalid (time|date)/.test(error.message)

@@ -1,24 +1,21 @@
 import { randomUUID } from "node:crypto";
 
-import { ERROR_CODES, type OtpVerify } from "@eventis/contracts";
+import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
-  generateDeviceCredential,
   hasExceededAttempts,
   isOtpExpired,
   isOtpUsed,
   otpMatches,
-  secretMatches,
 } from "../domain/otp.js";
 import type { OtpPurpose } from "../domain/otp.js";
 import {
   normalizeRwandaPhone,
   PhoneNormalizationError,
 } from "../domain/phone.js";
-import { checkDeviceBinding } from "../domain/user.js";
 import {
   OtpRepository,
   UserRepository,
@@ -40,7 +37,7 @@ export class VerifyOtpService {
   ) {}
 
   async execute(
-    input: OtpVerify & { displayName?: string },
+    input: { phone: string; code: string; displayName?: string; pin?: string },
     expectedPurpose?: OtpPurpose,
   ): Promise<AuthSessionResponse> {
     let phone: string;
@@ -111,70 +108,22 @@ export class VerifyOtpService {
       );
     }
 
-    const existingUser = await this.users.findByPhone(phone);
-    const existingDevices = existingUser
-      ? await this.users.findActiveDevicesByUserId(existingUser.id)
-      : [];
-    const existingDevice = existingDevices.find(
-      (device) => device.deviceId === input.deviceId,
-    ) ?? null;
-
-    const providedDeviceCredential = input.deviceCredential;
-    if (
-      existingUser &&
-      existingDevices.length > 0 &&
-      typeof providedDeviceCredential === "string" &&
-      providedDeviceCredential.length > 0 &&
-      !existingDevices.some(
-        (device) =>
-          device.deviceId === input.deviceId &&
-          secretMatches(
-            providedDeviceCredential,
-            device.credentialHash,
-            this.tokens.devicePepperValue(),
-          ),
-      )
-    ) {
-      throw AppError.forbidden(
-        "This account is already registered on another device",
-      );
-    }
-
-    const deviceCheck = checkDeviceBinding(
-      existingDevice,
-      input.deviceId,
-      input.deviceCredential,
-      this.tokens.devicePepperValue(),
-      secretMatches,
-    );
-
-    if (deviceCheck.kind === "mismatch") {
-      throw AppError.forbidden(
-        "This account is already registered on another device",
-      );
-    }
-
-    const rawDeviceCredential =
-      deviceCheck.kind === "register" ? generateDeviceCredential() : undefined;
-    const deviceCredentialHash = rawDeviceCredential
-      ? this.tokens.hashDeviceCredential(rawDeviceCredential)
-      : null;
-
     const refresh = this.tokens.issueRefreshToken();
     const familyId = randomUUID();
 
     let result: {
       user: Awaited<ReturnType<UserRepository["completeSignIn"]>>["user"];
-      deviceRegistered: boolean;
     };
     try {
       result = await this.users.completeSignIn({
         otpId: otp.id,
         phone,
         ...(input.displayName ? { displayName: input.displayName.trim() } : {}),
-        deviceId: input.deviceId,
-        deviceCredentialHash,
-        registerNewDevice: deviceCheck.kind === "register",
+        ...(input.pin
+          ? { pinHash: this.tokens.hashPin(input.pin) }
+          : otp.pinHash
+            ? { pinHash: otp.pinHash }
+            : {}),
         refresh: {
           tokenHash: refresh.tokenHash,
           familyId,
@@ -185,11 +134,10 @@ export class VerifyOtpService {
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (
-        message === "device already registered" ||
         message === "user inactive"
       ) {
         throw AppError.forbidden(
-          "This account is already registered on another device",
+          "This account is inactive",
         );
       }
       if (message === "phone already registered") {
@@ -211,8 +159,11 @@ export class VerifyOtpService {
 
     const access = await this.tokens.issueAccessToken({
       sub: result.user.id,
-      deviceId: input.deviceId,
-      role: result.user.accountType === "POSTER" ? "organizer_owner" : "customer",
+      role: result.user.role === "ADMIN"
+        ? "admin"
+        : result.user.accountType === "POSTER"
+          ? "organizer_owner"
+          : "customer",
     });
 
     return toAuthSession({
@@ -223,7 +174,6 @@ export class VerifyOtpService {
         refreshToken: refresh.token,
         refreshTokenExpiresAt: refresh.expiresAt,
       }),
-      ...(rawDeviceCredential ? { deviceCredential: rawDeviceCredential } : {}),
     });
   }
 }

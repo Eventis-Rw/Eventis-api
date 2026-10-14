@@ -1,66 +1,100 @@
 import {
   Body,
   Controller,
-  Delete,
-  Get,
-  Param,
   Patch,
+  Req,
   UseGuards,
 } from "@nestjs/common";
-import { z } from "zod";
+import type { FastifyRequest } from "fastify";
+import type {} from "@fastify/multipart";
 
+import { AppError } from "../../../common/errors/app-error.js";
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
 import {
   UpdateProfileService,
   updateProfileSchema,
-  type UpdateProfileInput,
 } from "../application/update-profile.service.js";
-import { UserDevicesService } from "../application/user-devices.service.js";
 
 import { CurrentUserId, JwtAuthGuard } from "./jwt-auth.guard.js";
 
-const deviceUpdateSchema = z.object({
-  deviceName: z.string().trim().min(1).max(255).optional(),
-  platform: z.string().trim().min(1).max(50).optional(),
-  osVersion: z.string().trim().min(1).max(80).optional(),
-  appVersion: z.string().trim().min(1).max(80).optional(),
-});
+const nullableProfileFields = new Set([
+  "lastName",
+  "displayName",
+  "email",
+  "organizationName",
+  "organizationDescription",
+  "dateOfBirth",
+  "gender",
+  "bio",
+  "location",
+  "interestedIn",
+]);
+
+interface ProfileAvatarFile {
+  filename: string;
+  mimetype: string;
+  data: Buffer;
+}
 
 @Controller({ path: "users", version: "1" })
 @UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(
     private readonly updateProfile: UpdateProfileService,
-    private readonly devices: UserDevicesService,
   ) {}
 
   @Patch("me")
   async patchMe(
     @CurrentUserId() userId: string,
-    @Body(zodPipe(updateProfileSchema)) body: UpdateProfileInput,
+    @Req() req: FastifyRequest,
+    @Body() body: unknown,
   ) {
-    return this.updateProfile.execute(userId, body);
+    const { fields, avatarFile } = await this.resolveProfilePayload(req, body);
+    const input = zodPipe(updateProfileSchema).transform(fields);
+    return this.updateProfile.execute(userId, input, avatarFile);
   }
 
-  @Get("me/devices")
-  async listDevices(@CurrentUserId() userId: string) {
-    return this.devices.list(userId);
-  }
+  private async resolveProfilePayload(
+    req: FastifyRequest,
+    body: unknown,
+  ): Promise<{
+    fields: Record<string, unknown>;
+    avatarFile?: ProfileAvatarFile;
+  }> {
+    const contentType = req.headers["content-type"] ?? "";
+    if (!contentType.includes("multipart/form-data")) {
+      return {
+        fields: typeof body === "object" && body !== null
+          ? (body as Record<string, unknown>)
+          : {},
+      };
+    }
 
-  @Patch("me/devices/:deviceId")
-  async updateDevice(
-    @CurrentUserId() userId: string,
-    @Param("deviceId") deviceId: string,
-    @Body(zodPipe(deviceUpdateSchema)) body: z.infer<typeof deviceUpdateSchema>,
-  ) {
-    return this.devices.update(userId, deviceId, body);
-  }
+    const fields: Record<string, unknown> = {};
+    let avatarFile: ProfileAvatarFile | undefined;
+    for await (const part of req.parts()) {
+      if (part.type === "file") {
+        if (part.fieldname !== "avatar_image" || avatarFile) {
+          throw AppError.validation({
+            avatar_image: ["Upload one image using the avatar_image field"],
+          });
+        }
+        avatarFile = {
+          filename: part.filename,
+          mimetype: part.mimetype,
+          data: await part.toBuffer(),
+        };
+        continue;
+      }
 
-  @Delete("me/devices/:deviceId")
-  async revokeDevice(
-    @CurrentUserId() userId: string,
-    @Param("deviceId") deviceId: string,
-  ) {
-    return this.devices.revoke(userId, deviceId);
+      if (part.value === "" || part.value === undefined) continue;
+      if (part.value === "null" && nullableProfileFields.has(part.fieldname)) {
+        fields[part.fieldname] = null;
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    return { fields, ...(avatarFile ? { avatarFile } : {}) };
   }
 }

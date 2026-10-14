@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 
 import { AppError } from "../../../common/errors/app-error.js";
+import { StorageService, type UploadedFile } from "../../../infrastructure/storage/storage.service.js";
 import type { User } from "../domain/user.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";
 import { toProfileResponse } from "../mappers/auth.mapper.js";
@@ -12,8 +13,7 @@ export const updateProfileSchema = z
     lastName: z.string().trim().min(2).max(100).nullable().optional(),
     displayName: z.string().trim().min(2).max(60).nullable().optional(),
     email: z.email().trim().max(255).nullable().optional(),
-    avatarUrl: z.string().trim().url().max(500).nullable().optional(),
-    accountType: z.enum(["POSTER", "LOVE"]).optional(),
+    accountType: z.enum(["POSTER", "CUSTOMER"]).optional(),
     organizationName: z.string().trim().max(160).nullable().optional(),
     organizationDescription: z.string().trim().max(10000).nullable().optional(),
     dateOfBirth: z
@@ -78,16 +78,32 @@ type EditableUserProfile = {
 
 @Injectable()
 export class UpdateProfileService {
-  constructor(private readonly users: UserRepository) {}
+  constructor(
+    private readonly users: UserRepository,
+    private readonly storage: StorageService,
+  ) {}
 
-  async execute(userId: string, input: UpdateProfileInput) {
+  async execute(
+    userId: string,
+    input: UpdateProfileInput,
+    avatarFile?: Pick<UploadedFile, "filename" | "mimetype" | "data">,
+  ) {
+    const existingUser = await this.users.findById(userId);
+    if (!existingUser) throw AppError.notFound("User");
+
+    let newAvatarKey: string | null = null;
+    let persistedAvatar = false;
     try {
       const data: EditableUserProfile = {};
       if (input.firstName !== undefined) data.firstName = input.firstName;
       if (input.lastName !== undefined) data.lastName = input.lastName;
       if (input.displayName !== undefined) data.displayName = input.displayName;
       if (input.email !== undefined) data.email = input.email;
-      if (input.avatarUrl !== undefined) data.avatarUrl = input.avatarUrl;
+      if (avatarFile) {
+        this.storage.validateImage(avatarFile, "avatar_image");
+        newAvatarKey = await this.storage.uploadAvatarImage(userId, avatarFile);
+        data.avatarUrl = this.storage.getPublicUrl(newAvatarKey);
+      }
       if (input.accountType !== undefined) data.accountType = input.accountType;
       if (input.organizationName !== undefined)
         data.organizationName = input.organizationName;
@@ -114,8 +130,25 @@ export class UpdateProfileService {
       if (input.interestedIn !== undefined)
         data.interestedIn = input.interestedIn;
       const user = await this.users.updateProfile(userId, data);
+      persistedAvatar = true;
+      if (newAvatarKey) {
+        if (existingUser.avatarUrl) {
+          try {
+            await this.storage.deleteFile(existingUser.avatarUrl);
+          } catch {
+            // The profile already points at the new image; cleanup can be retried separately.
+          }
+        }
+      }
       return toProfileResponse(user);
     } catch (error) {
+      if (newAvatarKey && !persistedAvatar) {
+        try {
+          await this.storage.deleteFile(newAvatarKey);
+        } catch {
+          // Keep the original error; an orphaned object can be cleaned up later.
+        }
+      }
       if (
         typeof error === "object" &&
         error !== null &&

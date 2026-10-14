@@ -8,18 +8,12 @@ import {
   otpMatches,
   OTP_MAX_ATTEMPTS,
   resendCooldownSeconds,
-  secretMatches,
-  hashSecret,
 } from "./otp.js";
 import { normalizeRwandaPhone, PhoneNormalizationError } from "./phone.js";
 import {
-  canRegisterTrustedDevice,
-  checkDeviceBinding,
   isRefreshReuse,
   isRefreshReusable,
-  MAX_TRUSTED_DEVICES,
   type RefreshSession,
-  type UserDevice,
 } from "./user.js";
 
 describe("normalizeRwandaPhone", () => {
@@ -66,7 +60,6 @@ describe("OTP crypto", () => {
       phone: "+250733958012",
       codeHash: "abc",
       purpose: "SIGN_IN" as const,
-      deviceId: "device-1",
       expiresAt: new Date("2026-01-01T11:59:00.000Z"),
       attempts: OTP_MAX_ATTEMPTS,
       verifiedAt: null,
@@ -86,78 +79,12 @@ describe("OTP crypto", () => {
   });
 });
 
-describe("device binding", () => {
-  const pepper = "device-pepper";
-  const credential = "a".repeat(40);
-  const device: UserDevice = {
-    id: "d1",
-    userId: "u1",
-    deviceId: "install-abc",
-    credentialHash: hashSecret(credential, pepper),
-    deviceName: null,
-    platform: null,
-    osVersion: null,
-    appVersion: null,
-    lastSeenAt: null,
-    revokedAt: null,
-    metadata: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
-  it("registers when no device exists", () => {
-    expect(
-      checkDeviceBinding(null, "install-abc", undefined, pepper, secretMatches)
-        .kind,
-    ).toBe("register");
-  });
-
-  it("matches the same device + credential", () => {
-    expect(
-      checkDeviceBinding(
-        device,
-        "install-abc",
-        credential,
-        pepper,
-        secretMatches,
-      ).kind,
-    ).toBe("match");
-  });
-
-  it("rejects a second device without silently replacing", () => {
-    expect(
-      checkDeviceBinding(
-        device,
-        "other-device",
-        credential,
-        pepper,
-        secretMatches,
-      ).kind,
-    ).toBe("mismatch");
-    expect(
-      checkDeviceBinding(
-        device,
-        "install-abc",
-        "wrong-credential-xxxxxxxxxxxx",
-        pepper,
-        secretMatches,
-      ).kind,
-    ).toBe("mismatch");
-  });
-
-  it("allows up to three active trusted devices before blocking the next one", () => {
-    expect(canRegisterTrustedDevice(MAX_TRUSTED_DEVICES - 1)).toBe(true);
-    expect(canRegisterTrustedDevice(MAX_TRUSTED_DEVICES)).toBe(false);
-  });
-});
-
 describe("refresh session rules", () => {
   const base: RefreshSession = {
     id: "s1",
     userId: "u1",
     familyId: "f1",
     tokenHash: "hash",
-    deviceId: "d1",
     expiresAt: new Date("2026-02-01T00:00:00.000Z"),
     revokedAt: null,
     replacedById: null,

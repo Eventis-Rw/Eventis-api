@@ -1,6 +1,4 @@
 import { z } from "zod";
-
-/** Treat blank .env values as absent so optional URL fields stay optional. */
 const optionalUrl = z.preprocess(
   (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
   z.url().optional(),
@@ -11,13 +9,6 @@ const optionalString = z.preprocess(
   z.string().optional(),
 );
 
-/**
- * Every environment variable the API reads, validated once at boot.
- *
- * The process refuses to start on a bad value rather than failing at 03:00 on the
- * first request that happens to need it. A missing payment secret is a startup
- * error, not a mystery 500 three hours into a deploy.
- */
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -56,6 +47,9 @@ const envSchema = z
     STORAGE_BUCKET: z.string().min(1),
     STORAGE_ACCESS_KEY_ID: z.string().min(1),
     STORAGE_SECRET_ACCESS_KEY: z.string().min(1),
+    CLOUDINARY_CLOUD_NAME: optionalString,
+    CLOUDINARY_API_KEY: optionalString,
+    CLOUDINARY_API_SECRET: optionalString,
     MOBILE_APP_SCHEME: z
       .string()
       .regex(/^[a-z][a-z0-9+.-]*$/i)
@@ -70,27 +64,18 @@ const envSchema = z
     SMS_PROVIDER: z.enum(["fake", "africas_talking"]).default("fake"),
     AT_USERNAME: optionalString,
     AT_API_KEY: optionalString,
-    /**
-     * `sandbox` → sandbox host (no real delivery).
-     * `production` → api.africastalking.com (real MTN/Airtel Rwanda delivery).
-     * Default: sandbox when AT_USERNAME=sandbox, otherwise production.
-     */
+
     AT_ENV: z.preprocess(
       (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
       z.enum(["sandbox", "production"]).optional(),
     ),
-    /** Optional registered sender ID / shortcode for production SMS. */
     AT_SENDER_ID: optionalString,
     /** @deprecated Prefer AT_API_KEY. Kept so older .env files still boot. */
     SMS_API_KEY: optionalString,
 
     SENTRY_DSN: optionalString,
   })
-  /**
-   * Nobody ships to production pointing at the fake payment provider, and nobody
-   * ships a real provider without the secret needed to verify its webhooks. An
-   * unverified webhook endpoint is an open door to free tickets.
-   */
+
   .refine((e) => e.NODE_ENV !== "production" || e.PAYMENT_PROVIDER !== "fake", {
     message: 'PAYMENT_PROVIDER must not be "fake" in production',
     path: ["PAYMENT_PROVIDER"],
@@ -102,6 +87,16 @@ const envSchema = z
       message:
         "PAYMENT_WEBHOOK_SECRET is required when using a real payment provider",
       path: ["PAYMENT_WEBHOOK_SECRET"],
+    },
+  )
+  .refine(
+    (e) =>
+      Boolean(e.CLOUDINARY_CLOUD_NAME) === Boolean(e.CLOUDINARY_API_KEY) &&
+      Boolean(e.CLOUDINARY_API_KEY) === Boolean(e.CLOUDINARY_API_SECRET),
+    {
+      message:
+        "CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET must be configured together",
+      path: ["CLOUDINARY_CLOUD_NAME"],
     },
   )
   .refine((e) => e.NODE_ENV !== "production" || e.SMS_PROVIDER !== "fake", {

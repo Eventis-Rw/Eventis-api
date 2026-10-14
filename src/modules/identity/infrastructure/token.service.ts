@@ -5,11 +5,14 @@ import { SignJWT, jwtVerify, errors as JoseErrors } from "jose";
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, loadEnv, type Env } from "../../../config/env.js";
-import { generateRefreshToken, hashSecret } from "../domain/otp.js";
+import {
+  generateRefreshToken,
+  hashSecret,
+  secretMatches,
+} from "../domain/otp.js";
 
 export interface AccessTokenClaims {
   sub: string;
-  deviceId: string;
   role?: string;
 }
 
@@ -30,7 +33,7 @@ export class TokenService {
   private readonly accessSecret: Uint8Array;
   private readonly refreshPepper: string;
   private readonly otpPepper: string;
-  private readonly devicePepper: string;
+  private readonly pinPepper: string;
 
   constructor(
     @Inject(ENV) env: Env | undefined,
@@ -42,23 +45,23 @@ export class TokenService {
 
     this.refreshPepper = `${resolved.JWT_REFRESH_SECRET}:refresh`;
     this.otpPepper = `${resolved.JWT_REFRESH_SECRET}:otp`;
-    this.devicePepper = `${resolved.JWT_REFRESH_SECRET}:device`;
+    this.pinPepper = `${resolved.JWT_REFRESH_SECRET}:pin`;
   }
 
   otpPepperValue(): string {
     return this.otpPepper;
   }
 
-  devicePepperValue(): string {
-    return this.devicePepper;
-  }
-
   hashRefreshToken(token: string): string {
     return hashSecret(token, this.refreshPepper);
   }
 
-  hashDeviceCredential(credential: string): string {
-    return hashSecret(credential, this.devicePepper);
+  hashPin(pin: string): string {
+    return hashSecret(pin, this.pinPepper);
+  }
+
+  pinMatches(pin: string, hash: string): boolean {
+    return secretMatches(pin, hash, this.pinPepper);
   }
 
   hashOtpCode(code: string): string {
@@ -74,7 +77,6 @@ export class TokenService {
     );
 
     const token = await new SignJWT({
-      deviceId: claims.deviceId,
       role: claims.role ?? "customer",
       roles: [claims.role ?? "customer"],
     })
@@ -98,13 +100,8 @@ export class TokenService {
       if (typeof payload.sub !== "string" || !payload.sub) {
         throw AppError.unauthenticated();
       }
-      const deviceId =
-        typeof payload.deviceId === "string" ? payload.deviceId : "";
       const role = typeof payload.role === "string" ? payload.role : "customer";
-      if (!deviceId) {
-        throw AppError.unauthenticated();
-      }
-      return { sub: payload.sub, deviceId, role };
+      return { sub: payload.sub, role };
     } catch (error) {
       if (error instanceof AppError) throw error;
       if (error instanceof JoseErrors.JWTExpired) {

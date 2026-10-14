@@ -20,10 +20,8 @@ export interface CreateEventInput {
   startDate: Date;
   time: string;
   status?: EventStatus | undefined;
-  /** Optional pre-resolved storage key (ignored when coverFile is provided). */
   coverImage?: string | null | undefined;
   coverFile?: CreateEventCoverFile | undefined;
-  /** Bound strictly from the authenticated user — never from the client body. */
   posterId: string;
 }
 
@@ -41,6 +39,8 @@ export class CreateEventService {
       this.storage.validateImage(input.coverFile);
     }
 
+    let uploadedCover: string | null = null;
+    let persistedCover = false;
     try {
       const draft = createEvent(
         {
@@ -74,7 +74,8 @@ export class CreateEventService {
           created.eventId,
           input.coverFile,
         );
-        return await this.events.update(created.eventId, {
+        uploadedCover = key;
+        const updated = await this.events.update(created.eventId, {
           title: created.title,
           description: created.description,
           coverImage: key,
@@ -84,10 +85,19 @@ export class CreateEventService {
           time: created.time,
           status: created.status,
         });
+        persistedCover = true;
+        return updated;
       }
 
       return created;
     } catch (error) {
+      if (uploadedCover && !persistedCover) {
+        try {
+          await this.storage.deleteFile(uploadedCover);
+        } catch {
+
+        }
+      }
       if (error instanceof Error && /Invalid (time|date)/.test(error.message)) {
         throw AppError.validation({ _: [error.message] });
       }

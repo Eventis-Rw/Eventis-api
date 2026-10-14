@@ -30,13 +30,13 @@ export class StorageService {
     private readonly clock: Clock,
   ) {}
 
-  /**
-   * Validate image MIME, extension and file size.
-   */
-  validateImage(file: { mimetype: string; data: Buffer; filename: string }): void {
+  validateImage(
+    file: { mimetype: string; data: Buffer; filename: string },
+    fieldName = "cover_image",
+  ): void {
     if (!ALLOWED_IMAGE_MIMES.includes(file.mimetype as (typeof ALLOWED_IMAGE_MIMES)[number])) {
       throw AppError.validation({
-        cover_image: [
+        [fieldName]: [
           `Invalid image type '${file.mimetype}'. Allowed types: ${ALLOWED_IMAGE_MIMES.join(", ")}`,
         ],
       });
@@ -44,7 +44,7 @@ export class StorageService {
 
     if (file.data.length > MAX_IMAGE_SIZE) {
       throw AppError.validation({
-        cover_image: [
+        [fieldName]: [
           `Image size exceeds maximum limit of ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`,
         ],
       });
@@ -54,7 +54,7 @@ export class StorageService {
     const allowedExts = [".jpg", ".jpeg", ".png", ".webp"];
     if (rawExt && !allowedExts.includes(rawExt)) {
       throw AppError.validation({
-        cover_image: [`File extension '${rawExt}' is not allowed for images`],
+        [fieldName]: [`File extension '${rawExt}' is not allowed for images`],
       });
     }
 
@@ -65,7 +65,7 @@ export class StorageService {
     }[file.mimetype];
     if (rawExt && expectedExt && !expectedExt.includes(rawExt)) {
       throw AppError.validation({
-        cover_image: ["File extension does not match the declared image type"],
+        [fieldName]: ["File extension does not match the declared image type"],
       });
     }
 
@@ -75,14 +75,12 @@ export class StorageService {
       (file.mimetype === "image/webp" && file.data.length >= 12 && file.data.toString("ascii", 0, 4) === "RIFF" && file.data.toString("ascii", 8, 12) === "WEBP");
     if (!signatureMatches) {
       throw AppError.validation({
-        cover_image: ["File content does not match the declared image type"],
+        [fieldName]: ["File content does not match the declared image type"],
       });
     }
   }
 
-  /**
-   * Store image file safely and return the persistent storage key.
-   */
+
   async uploadCoverImage(
     eventId: string,
     file: { mimetype: string; data: Buffer; filename: string },
@@ -94,20 +92,31 @@ export class StorageService {
       ext = file.mimetype === "image/png" ? ".png" : file.mimetype === "image/webp" ? ".webp" : ".jpg";
     }
 
-    // Sanitize and generate safe key
     const sanitizedKey = `events/${eventId}/cover-${randomUUID()}${ext}`;
 
-    const response = await this.request("PUT", sanitizedKey, file.data, file.mimetype);
-    if (!response.ok) {
-      throw new Error(`Object storage upload failed with status ${response.status}`);
-    }
-
-    return sanitizedKey;
+    return this.uploadImage(
+      sanitizedKey,
+      file.data,
+      file.mimetype,
+    );
   }
 
-  /**
-   * Format the public URL from the stored key.
-   */
+  async uploadAvatarImage(
+    userId: string,
+    file: { mimetype: string; data: Buffer; filename: string },
+  ): Promise<string> {
+    this.validateImage(file, "avatar_image");
+
+    let ext = extname(file.filename).toLowerCase();
+    if (!ext) {
+      ext = file.mimetype === "image/png" ? ".png" : file.mimetype === "image/webp" ? ".webp" : ".jpg";
+    }
+
+    const key = `users/${userId}/avatar-${randomUUID()}${ext}`;
+    return this.uploadImage(key, file.data, file.mimetype);
+  }
+
+
   getPublicUrl(key: string | null): string | null {
     if (!key) return null;
     if (key.startsWith("http://") || key.startsWith("https://")) {
@@ -117,15 +126,137 @@ export class StorageService {
     return `${this.env.STORAGE_ENDPOINT.replace(/\/$/, "")}/${this.env.STORAGE_BUCKET}/${cleanKey}`;
   }
 
-  /**
-   * Delete image file from storage if present.
-   */
+  getStorageKeyFromPublicUrl(value: string | null): string | null {
+    if (!value) return null;
+
+    try {
+      const endpoint = new URL(this.env.STORAGE_ENDPOINT);
+      const url = new URL(value);
+      const bucketPrefix = `${endpoint.pathname.replace(/\/$/, "")}/${this.env.STORAGE_BUCKET}/`;
+      if (url.origin !== endpoint.origin || !url.pathname.startsWith(bucketPrefix)) {
+        return null;
+      }
+      return decodeURIComponent(url.pathname.slice(bucketPrefix.length)) || null;
+    } catch {
+      return null;
+    }
+  }
+
+
   async deleteFile(key: string | null): Promise<void> {
     if (!key) return;
 
-    const response = await this.request("DELETE", key.replace(/^\/+/, ""));
+    if (this.isCloudinaryUrl(key)) {
+      await this.deleteCloudinaryFile(key);
+      return;
+    }
+
+    const storageKey = key.startsWith("http://") || key.startsWith("https://")
+      ? this.getStorageKeyFromPublicUrl(key)
+      : key;
+    if (!storageKey) return;
+
+    const response = await this.request("DELETE", storageKey.replace(/^\/+/, ""));
     if (!response.ok && response.status !== 404) {
       throw new Error(`Object storage delete failed with status ${response.status}`);
+    }
+  }
+
+  private async uploadImage(
+      key: string,
+      data: Buffer,
+      contentType: string,
+    ): Promise<string> {
+      if (this.isCloudinaryConfigured()) {
+        return this.uploadToCloudinary(key, data, contentType);
+      }
+
+      const response = await this.request("PUT", key, data, contentType);
+      if (!response.ok) {
+        throw new Error(`Object storage upload failed with status ${response.status}`);
+      }
+      return key;
+    }
+
+  private isCloudinaryConfigured(): boolean {
+      return Boolean(
+        this.env.CLOUDINARY_CLOUD_NAME &&
+        this.env.CLOUDINARY_API_KEY &&
+        this.env.CLOUDINARY_API_SECRET,
+      );
+    }
+
+  private isCloudinaryUrl(value: string): boolean {
+      return value.includes("res.cloudinary.com/");
+    }
+
+  private async uploadToCloudinary(
+      key: string,
+      data: Buffer,
+      contentType: string,
+    ): Promise<string> {
+      const cloudName = this.env.CLOUDINARY_CLOUD_NAME!;
+      const apiKey = this.env.CLOUDINARY_API_KEY!;
+      const apiSecret = this.env.CLOUDINARY_API_SECRET!;
+      const timestamp = Math.floor(this.clock.now().getTime() / 1000).toString();
+      const folder = key.slice(0, key.lastIndexOf("/"));
+      const publicId = key.slice(key.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+      const signature = createHash("sha1")
+        .update(`folder=${folder}&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
+        .digest("hex");
+      const form = new FormData();
+      form.append("file", new Blob([data], { type: contentType }), publicId);
+      form.append("api_key", apiKey);
+      form.append("timestamp", timestamp);
+      form.append("folder", folder);
+      form.append("public_id", publicId);
+      form.append("signature", signature);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/upload`,
+        { method: "POST", body: form, signal: AbortSignal.timeout(10_000) },
+      );
+      if (!response.ok) {
+        throw new Error(`Cloudinary image upload failed with status ${response.status}`);
+      }
+      const payload = (await response.json()) as { secure_url?: unknown };
+      if (typeof payload.secure_url !== "string" || !payload.secure_url) {
+        throw new Error("Cloudinary image upload returned no secure URL");
+      }
+      return payload.secure_url;
+    }
+
+  private async deleteCloudinaryFile(url: string): Promise<void> {
+      const match = url.match(/\/image\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
+      if (!match?.[1]) return;
+
+      const cloudName = this.env.CLOUDINARY_CLOUD_NAME;
+      const apiKey = this.env.CLOUDINARY_API_KEY;
+      const apiSecret = this.env.CLOUDINARY_API_SECRET;
+      if (!cloudName || !apiKey || !apiSecret) return;
+
+      const publicId = match[1].replace(/\.[^.]+$/, "");
+      const timestamp = Math.floor(this.clock.now().getTime() / 1000).toString();
+      const signature = createHash("sha1")
+        .update(`public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
+        .digest("hex");
+      const form = new URLSearchParams({
+        public_id: publicId,
+        api_key: apiKey,
+        timestamp,
+        signature,
+      });
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/destroy`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: form,
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Cloudinary image deletion failed with status ${response.status}`);
     }
   }
 

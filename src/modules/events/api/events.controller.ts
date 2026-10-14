@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
+import type {} from "@fastify/multipart";
 
 import {
   CurrentUser,
@@ -118,6 +119,26 @@ export class EventsController {
     };
   }
 
+  @Get("admin/all")
+  @Roles("admin")
+  async listAllForAdmin(
+    @Query(zodPipe(listEventsDto)) query: ListEventsDto,
+  ): Promise<EventListResponse> {
+    const result = await this.listEvents.execute({
+      page: query.page,
+      limit: query.limit,
+      category: query.category,
+      search: query.search,
+      includeNonPublished: true,
+    });
+    return {
+      items: result.items.map((event) => this.presentation.toResponse(event)),
+      page: query.page,
+      limit: query.limit,
+      total: result.total,
+    };
+  }
+
   @Get(":id/share")
   @Public()
   async share(@Param("id") id: string) {
@@ -130,6 +151,7 @@ export class EventsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser | undefined,
   ): Promise<EventResponse> {
+    assertValidEventId(id);
     const event = await this.getEvent.execute(id, user?.userId);
     return this.presentation.toResponse(event);
   }
@@ -161,6 +183,7 @@ export class EventsController {
     @CurrentUser() user: AuthenticatedUser | undefined,
   ): Promise<void> {
     if (!user) throw AppError.unauthenticated();
+    assertValidEventId(id);
     await this.deleteEvent.execute(id, user.userId);
   }
 
@@ -171,6 +194,7 @@ export class EventsController {
     body: unknown,
   ): Promise<EventResponse> {
     if (!user) throw AppError.unauthenticated();
+    assertValidEventId(id);
 
     const { dto, coverFile } = await this.resolveUpdatePayload(req, body);
     const event = await this.updateEvent.execute(id, user.userId, {
@@ -181,7 +205,6 @@ export class EventsController {
       startDate: dto.start_date,
       time: dto.time,
       status: dto.status,
-      coverImage: dto.cover_image,
       coverFile,
     });
 
@@ -217,6 +240,14 @@ export class EventsController {
   }
 }
 
+const EVENT_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function assertValidEventId(id: string): void {
+  if (!EVENT_ID_REGEX.test(id)) {
+    throw AppError.validation({ id: ["id must be a valid UUID"] });
+  }
+}
+
 function isMultipart(req: FastifyRequest): boolean {
   const contentType = req.headers["content-type"] ?? "";
   return contentType.includes("multipart/form-data");
@@ -229,7 +260,6 @@ async function parseMultipart(req: FastifyRequest): Promise<ParsedMultipart> {
   const parts = req.parts();
   for await (const part of parts) {
     if (part.type === "file") {
-      const data = await part.toBuffer();
       if (
         part.fieldname === "cover_image" ||
         part.fieldname === "coverImage" ||
@@ -238,11 +268,16 @@ async function parseMultipart(req: FastifyRequest): Promise<ParsedMultipart> {
         if (file) {
           throw AppError.validation({ cover_image: ["Only one cover image may be uploaded"] });
         }
+        const data = await part.toBuffer();
         file = {
           filename: part.filename,
           mimetype: part.mimetype,
           data,
         };
+      } else {
+        throw AppError.validation({
+          cover_image: ["Upload the image using the cover_image field"],
+        });
       }
       continue;
     }
