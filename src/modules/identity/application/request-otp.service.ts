@@ -1,6 +1,5 @@
 import {
   ERROR_CODES,
-  type OtpRequest,
   type OtpRequestResponse,
 } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
@@ -8,10 +7,10 @@ import { Inject, Injectable } from "@nestjs/common";
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
-  OTP_DAILY_LIMIT_PER_DEVICE,
   OTP_DAILY_LIMIT_PER_PHONE,
   OTP_RESEND_COOLDOWN_MS,
   generateOtpCode,
+  isOtpExpired,
   otpExpiresAt,
   resendCooldownSeconds,
 } from "../domain/otp.js";
@@ -38,7 +37,12 @@ export class RequestOtpService {
   ) { }
 
   async execute(
-    input: OtpRequest & { firstName?: string; accountType?: "POSTER" | "LOVE" },
+    input: {
+      phone: string;
+      firstName?: string;
+      accountType?: "POSTER" | "CUSTOMER";
+      pin?: string;
+    },
   ): Promise<OtpRequestResponse> {
     let phone: string;
     try {
@@ -59,16 +63,24 @@ export class RequestOtpService {
       );
     }
     const latest = await this.otps.findLatestAny(phone);
-    if (purpose === "SIGN_UP" && latest && latest.deviceId === input.deviceId) {
+    const latestSignup =
+      purpose === "SIGN_UP"
+        ? await this.otps.findLatestAny(phone, "SIGN_UP")
+        : null;
+    if (
+      latestSignup &&
+      !latestSignup.verifiedAt &&
+      !isOtpExpired(latestSignup, now)
+    ) {
       const requestedFirstName = input.firstName ?? null;
-      const requestedAccountType = input.accountType ?? "LOVE";
+      const requestedAccountType = input.accountType ?? "CUSTOMER";
       if (
-        latest.firstName !== requestedFirstName ||
-        (latest.accountType ?? "LOVE") !== requestedAccountType
+        latestSignup.firstName !== requestedFirstName ||
+        (latestSignup.accountType ?? "CUSTOMER") !== requestedAccountType
       ) {
         throw AppError.conflict(
           ERROR_CODES.FORBIDDEN,
-          "This signup request does not match the current phone and device identity",
+          "This signup request does not match the current phone identity",
         );
       }
     }
@@ -89,14 +101,6 @@ export class RequestOtpService {
     if (phoneCount >= OTP_DAILY_LIMIT_PER_PHONE) {
       throw AppError.rateLimited(3600);
     }
-    const deviceCount = await this.otps.countSince(
-      { deviceId: input.deviceId },
-      dayAgo,
-    );
-    if (deviceCount >= OTP_DAILY_LIMIT_PER_DEVICE) {
-      throw AppError.rateLimited(3600);
-    }
-
     const code = generateOtpCode();
     const codeHash = this.tokens.hashOtpCode(code);
     const expiresAt = otpExpiresAt(now);
@@ -105,10 +109,12 @@ export class RequestOtpService {
       phone,
       codeHash,
       purpose,
-      deviceId: input.deviceId,
       expiresAt,
       ...(purpose === "SIGN_UP"
         ? { firstName: input.firstName, accountType: input.accountType }
+        : {}),
+      ...(purpose === "SIGN_UP" && input.pin
+        ? { pinHash: this.tokens.hashPin(input.pin) }
         : {}),
     });
 

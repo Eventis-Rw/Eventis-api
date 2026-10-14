@@ -11,7 +11,6 @@ export const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 export const OTP_MAX_ATTEMPTS = 5;
 
 export const OTP_DAILY_LIMIT_PER_PHONE = 10;
-export const OTP_DAILY_LIMIT_PER_DEVICE = 20;
 
 export type OtpPurpose = "SIGN_IN" | "SIGN_UP";
 
@@ -20,9 +19,9 @@ export interface OtpRecord {
   readonly phone: string;
   readonly codeHash: string;
   readonly purpose: OtpPurpose;
-  readonly deviceId: string;
   readonly firstName?: string | null;
-  readonly accountType?: "POSTER" | "LOVE" | null;
+  readonly accountType?: "POSTER" | "CUSTOMER" | "LOVE" | null;
+  readonly pinHash?: string | null;
   readonly expiresAt: Date;
   readonly attempts: number;
   readonly verifiedAt: Date | null;

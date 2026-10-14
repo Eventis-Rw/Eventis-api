@@ -144,6 +144,39 @@ GET    /api/v1/events/:id
 PATCH  /api/v1/events/:id
 ```
 
+### Create an event with a cover image
+
+In Postman, send `POST http://localhost:3000/api/v1/events`, set **Authorization → Bearer Token** to an access token for an `organizer_owner`, then select **Body → form-data**. Add the event properties as text fields and the image as a file:
+
+| Key | Postman type | Value |
+| --- | --- | --- |
+| `title` | Text | `Kigali Tech Meetup` |
+| `description` | Text | `A meetup for the local tech community` |
+| `category` | Text | `tech` |
+| `location` | Text | `Kigali Convention Centre` |
+| `start_date` | Text | `2026-11-01` |
+| `time` | Text | `17:00` |
+| `status` | Text | `draft` |
+| `cover_image` | **File** | Choose a `.jpg`, `.png`, or `.webp` image (max 5 MiB) |
+
+Do not enter JSON braces in form-data. Let Postman set the multipart `Content-Type` header, including its boundary. The image and text fields are processed in the same request.
+
+In Swagger UI, open `POST /api/v1/events`, click **Try it out**, and use the
+`cover_image` **Choose File** control. The operation is documented as
+`multipart/form-data`, so it does not ask for a cover URL. The same flow is
+available for `PUT` and `PATCH /api/v1/events/{id}` and for
+`PATCH /api/v1/users/me` with the `avatar_image` field.
+
+### Update a profile photo
+
+Send `PATCH http://localhost:3000/api/v1/users/me` with a bearer access token and
+**Body → form-data**. Add any changed profile fields as text parts and add
+`avatar_image` as a file part. The API accepts JPEG, PNG, and WebP images up to
+5 MiB. It uploads the image to the configured storage provider and saves the
+resulting URL in `users.avatar_url`. The response includes that URL as
+`avatarUrl`.
+The same file picker is available on the profile update operation in Swagger.
+
 ## Database
 
 - **Prisma** is the ORM and schema source of truth ([ADR 0009](docs/adr/0009-prisma-over-drizzle.md))
@@ -160,6 +193,20 @@ PATCH  /api/v1/events/:id
 > [docs/guides/local-setup.md](docs/guides/local-setup.md). Without that step,
 > `bun install` cannot resolve `@eventis/contracts`, `@eventis/eslint-config` or
 > `@eventis/tsconfig`.
+
+
+# 1. Start the PostgreSQL database container in the background
+docker compose -f docker/docker-compose.yml up -d db
+
+# 2. Run Prisma migrations to synchronize database schema
+bunx prisma migrate dev
+
+# 3. Compile TypeScript code and update generated types
+bun run build
+
+# 4. Launch the NestJS API application server
+bun run dev
+
 
 ```bash
 bun install
@@ -224,10 +271,30 @@ Copy [`.env.example`](.env.example). Important variables:
 | `REDIS_URL`                         | Redis for queues / cache       |
 | `JWT_*` / `TICKET_SIGNING_*`        | Auth and QR signing keys       |
 | `STORAGE_*`                         | Object storage (MinIO locally) |
+| `CLOUDINARY_*`                      | Cloudinary image uploads       |
 | `PAYMENT_PROVIDER` / `SMS_PROVIDER` | Use `fake` in development      |
 | `LOG_LEVEL` / `SENTRY_DSN`          | Logging and monitoring         |
 
 Never commit `.env`. Secrets are validated at startup — a missing value fails boot.
+
+When `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`
+are all configured, profile and event images are uploaded to Cloudinary and the
+returned `secure_url` is stored in the profile/event record. Keep these values
+only in the local environment or deployment secret manager.
+
+Authentication uses a five-digit PIN after signup. Signup verifies a six-digit
+phone OTP and sets the PIN; normal login accepts only the phone number and PIN.
+New accounts default to the `CUSTOMER` account type. Administrators use a
+separate `ADMIN` role and can view all events, list users, suspend accounts,
+and reactivate accounts through the `/api/v1/admin` endpoints. Promote the
+first administrator directly in the database:
+
+```sql
+UPDATE users SET role = 'ADMIN' WHERE phone = '+250788123456';
+```
+
+Existing users can use `POST /api/v1/auth/request-pin-reset` followed by
+`POST /api/v1/auth/reset-pin` to establish or change a PIN.
 
 ## Testing
 

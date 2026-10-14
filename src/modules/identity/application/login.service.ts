@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Injectable } from "@nestjs/common";
 
-import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
-import { secretMatches } from "../domain/otp.js";
 import {
   normalizeRwandaPhone,
   PhoneNormalizationError,
@@ -19,13 +17,11 @@ export class LoginService {
   constructor(
     private readonly users: UserRepository,
     private readonly tokens: TokenService,
-    private readonly clock: Clock,
   ) {}
 
   async execute(input: {
     phone: string;
-    deviceId: string;
-    deviceCredential: string;
+    pin: string;
   }): Promise<AuthSessionResponse> {
     let phone: string;
     try {
@@ -38,18 +34,11 @@ export class LoginService {
     }
 
     const user = await this.users.findByPhone(phone);
-    const device = user
-      ? await this.users.findDeviceByUserId(user.id, input.deviceId)
-      : null;
     if (
       !user ||
       user.status !== "ACTIVE" ||
-      !device ||
-      !secretMatches(
-        input.deviceCredential,
-        device.credentialHash,
-        this.tokens.devicePepperValue(),
-      )
+      !user.pinHash ||
+      !this.tokens.pinMatches(input.pin, user.pinHash)
     ) {
       throw AppError.unauthenticated(
         "Unable to sign in with these credentials",
@@ -59,17 +48,19 @@ export class LoginService {
     const refresh = this.tokens.issueRefreshToken();
     await this.users.createLoginSession({
       userId: user.id,
-      deviceId: input.deviceId,
       refresh: {
         tokenHash: refresh.tokenHash,
         familyId: randomUUID(),
         expiresAt: refresh.expiresAt,
       },
-      now: this.clock.now(),
     });
     const access = await this.tokens.issueAccessToken({
       sub: user.id,
-      deviceId: input.deviceId,
+      role: user.role === "ADMIN"
+        ? "admin"
+        : user.accountType === "POSTER"
+          ? "organizer_owner"
+          : "customer",
     });
     return toAuthSession({
       user,

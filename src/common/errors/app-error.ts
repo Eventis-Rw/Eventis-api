@@ -1,13 +1,5 @@
 import { ERROR_CODES, type ErrorCode } from "@eventis/contracts";
 
-/**
- * The only error type business code throws.
- *
- * Carrying the HTTP status here keeps controllers free of status decisions and
- * guarantees every failure reaches the client in one envelope shape. Throwing a
- * raw Error gets you a 500 and a Sentry alert, which is the correct outcome for a
- * bug and the wrong one for "this ticket was already scanned".
- */
 export class AppError extends Error {
   constructor(
     readonly code: ErrorCode,
@@ -16,7 +8,6 @@ export class AppError extends Error {
     readonly options: {
       fields?: Record<string, string[]>;
       retryAfterSeconds?: number;
-      /** Logged, never returned. Put the internal detail here. */
       internal?: Record<string, unknown>;
       cause?: unknown;
     } = {},

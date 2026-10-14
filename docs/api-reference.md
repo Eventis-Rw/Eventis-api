@@ -12,10 +12,10 @@ Swagger UI loads its presentation bundle from `unpkg.com`, so the UI needs an in
 
 ## Authentication test flow
 
-1. Call `POST /api/v1/auth/signup` with `phone` and `username` in the JSON body. Swagger UI creates and persists its install ID automatically. The mobile app should use its existing secure `getDeviceId()` helper and attach `X-Device-Id` automatically. `accountType` is optional and defaults to `LOVE` (`POSTER` is also supported). For an existing account, use `POST /api/v1/auth/request-otp` with `phone` and `deviceId` in its current request body.
+1. Call `POST /api/v1/auth/signup` with `phone`, `username`, and a five-digit `pin`. `accountType` is optional and defaults to `CUSTOMER` (`POSTER` is also supported).
 2. Read the six-digit code from the SMS provider configured in `.env`. `SMS_PROVIDER=fake` records messages only in memory and deliberately does not log the OTP, so it cannot complete an interactive HTTP signup flow. For a real phone test, configure Africa's Talking sandbox; for automated checks, the fake provider is inspectable by the test harness.
-3. Call `POST /api/v1/auth/signup/verify-otp` with `phone` and the six-digit `code`, using the same `X-Device-Id` header. The first successful device registration may return `deviceCredential`; store it securely. The response also contains `tokens.accessToken` and `tokens.refreshToken`.
-4. For login, send only `phone` in the request body. Swagger uses the install ID it generated and the credential returned during verification. Native clients must send those as `X-Device-Id` and `X-Device-Credential` from local/secure storage. A phone number alone cannot sign in.
+3. Call `POST /api/v1/auth/signup/verify-otp` with `phone` and the six-digit `code`. The response contains `tokens.accessToken` and `tokens.refreshToken`.
+4. For login, send `phone` and the five-digit `pin` in the request body. No device headers or device credentials are used.
 5. In Swagger UI, click **Authorize** and paste the access token (without adding `Bearer `). Then try `GET /api/v1/auth/me`, `PATCH /api/v1/users/me`, and `POST /api/v1/auth/logout`.
 
 
@@ -36,5 +36,21 @@ Swagger UI loads its presentation bundle from `unpkg.com`, so the UI needs an in
 | GET | `/api/v1/auth/me` | Bearer access token |
 | PATCH | `/api/v1/users/me` | Bearer access token |
 
+
+## Image upload test flow
+
+Image-changing operations use `multipart/form-data` and expose a Swagger file
+picker:
+
+- `POST /api/v1/events` — upload the optional `cover_image` file with event fields.
+- `PUT` or `PATCH /api/v1/events/{id}` — upload an optional replacement `cover_image`.
+- `PATCH /api/v1/users/me` — upload an optional `avatar_image` file with profile fields.
+
+In Swagger, click **Try it out**, choose a local file, and execute the request.
+In Postman, choose **Body → form-data**, enter the other fields as text, set
+`cover_image` or `avatar_image` to **File**, and select the image. JPEG, PNG,
+and WebP files up to 5 MiB are validated. The configured storage provider
+uploads the bytes, and the generated URL is returned in the event
+`cover_image` or profile `avatarUrl` response field.
 
 Errors share the `code`, `message` and `requestId` envelope; validation errors may also include `fields`, and throttling errors may include `retryAfterSeconds`. OTPs, access tokens, refresh tokens and device credentials shown as placeholders must be replaced with values from your running environment.
