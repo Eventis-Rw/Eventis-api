@@ -20,6 +20,7 @@ import {
   runtimeName,
   runtimeVersion,
 } from "./infrastructure/runtime/runtime.js";
+import { ChatRealtimeGateway } from "./modules/chat/index.js";
 import { openApiDocument } from "./openapi.js";
 
 async function bootstrap(): Promise<void> {
@@ -58,11 +59,12 @@ async function bootstrap(): Promise<void> {
   });
   await app.register(import("@fastify/multipart"), {
     limits: {
-      fileSize: 5 * 1024 * 1024,
+      fileSize: 15 * 1024 * 1024,
       files: 1,
     },
   });
 
+  app.get(ChatRealtimeGateway).attach(app.getHttpServer());
   app.enableShutdownHooks();
 
   const env = app.get<Env>(ENV);

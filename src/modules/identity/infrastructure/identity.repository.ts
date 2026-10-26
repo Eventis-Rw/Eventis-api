@@ -107,6 +107,22 @@ export class UserRepository {
     return row ? toUserDomain(row) : null;
   }
 
+  async findActiveByPhones(phones: string[]): Promise<User[]> {
+    if (phones.length === 0) return [];
+    const rows = await this.prisma.user.findMany({
+      where: { phone: { in: phones }, status: "ACTIVE" },
+    });
+    return rows.map(toUserDomain);
+  }
+
+  async findActiveByIds(ids: string[]): Promise<User[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: ids }, status: "ACTIVE" },
+    });
+    return rows.map(toUserDomain);
+  }
+
   async setPinHash(userId: string, pinHash: string): Promise<User> {
     const row = await this.prisma.user.update({
       where: { id: userId },

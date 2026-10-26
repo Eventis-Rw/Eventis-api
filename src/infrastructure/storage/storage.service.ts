@@ -22,6 +22,25 @@ export const ALLOWED_IMAGE_MIMES = [
 ] as const;
 
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+export const MAX_CHAT_FILE_SIZE = 15 * 1024 * 1024;
+
+export const ALLOWED_CHAT_MIMES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/aac",
+  "audio/webm",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-m4a",
+  "audio/m4a",
+] as const;
 
 @Injectable()
 export class StorageService {
@@ -99,6 +118,60 @@ export class StorageService {
       file.data,
       file.mimetype,
     );
+  }
+
+  validateChatFile(
+    file: { mimetype: string; data: Buffer; filename: string },
+    fieldName = "file",
+  ): void {
+    if (!ALLOWED_CHAT_MIMES.includes(file.mimetype as (typeof ALLOWED_CHAT_MIMES)[number])) {
+      throw AppError.validation({
+        [fieldName]: [
+          `Unsupported file type '${file.mimetype}'. Allowed types include images, PDF, text, Word documents, and audio.`,
+        ],
+      });
+    }
+    if (file.data.length > MAX_CHAT_FILE_SIZE) {
+      throw AppError.validation({
+        [fieldName]: [
+          `File size exceeds maximum limit of ${MAX_CHAT_FILE_SIZE / (1024 * 1024)}MB`,
+        ],
+      });
+    }
+    if (
+      file.mimetype.startsWith("image/")
+    ) {
+      this.validateImage(file, fieldName);
+    }
+  }
+
+  async uploadChatAttachment(
+    conversationId: string,
+    messageId: string,
+    file: { mimetype: string; data: Buffer; filename: string },
+  ): Promise<string> {
+    this.validateChatFile(file);
+    const ext = extname(file.filename).toLowerCase() || extensionForMime(file.mimetype);
+    const key = `chat/${conversationId}/${messageId}/${randomUUID()}${ext}`;
+    const response = await this.request("PUT", key, file.data, file.mimetype);
+    if (!response.ok) {
+      throw new Error(`Object storage upload failed with status ${response.status}`);
+    }
+    return key;
+  }
+
+  async getPrivateObject(key: string): Promise<{ data: Buffer; contentType: string } | null> {
+    const storageKey = key.startsWith("http://") || key.startsWith("https://")
+      ? this.getStorageKeyFromPublicUrl(key)
+      : key.replace(/^\/+/, "");
+    if (!storageKey) return null;
+    const response = await this.request("GET", storageKey);
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`Object storage download failed with status ${response.status}`);
+    }
+    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+    return { data: Buffer.from(await response.arrayBuffer()), contentType };
   }
 
   async uploadAvatarImage(
@@ -257,11 +330,11 @@ export class StorageService {
       );
       if (!response.ok) {
         throw new Error(`Cloudinary image deletion failed with status ${response.status}`);
+      }
     }
-  }
 
   private async request(
-    method: "PUT" | "DELETE",
+    method: "PUT" | "DELETE" | "GET",
     key: string,
     body?: Buffer,
     contentType = "application/octet-stream",
@@ -297,7 +370,38 @@ export class StorageService {
       method,
       headers: { ...headers, authorization },
       ...(body ? { body } : {}),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(method === "GET" ? 20_000 : 5000),
     });
+  }
+}
+
+function extensionForMime(mime: string): string {
+  switch (mime) {
+    case "image/jpeg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/webp":
+      return ".webp";
+    case "application/pdf":
+      return ".pdf";
+    case "text/plain":
+      return ".txt";
+    case "audio/mpeg":
+      return ".mp3";
+    case "audio/mp4":
+    case "audio/x-m4a":
+    case "audio/m4a":
+      return ".m4a";
+    case "audio/aac":
+      return ".aac";
+    case "audio/webm":
+      return ".webm";
+    case "audio/ogg":
+      return ".ogg";
+    case "audio/wav":
+      return ".wav";
+    default:
+      return "";
   }
 }

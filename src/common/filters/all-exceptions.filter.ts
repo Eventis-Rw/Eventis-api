@@ -47,6 +47,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
     exception: unknown,
     requestId: string,
   ): { status: number; body: ApiError } {
+    if (
+      exception instanceof Error &&
+      exception.name === "PolicyViolationError" &&
+      "code" in exception &&
+      typeof exception.code === "string"
+    ) {
+      return {
+        status: 403,
+        body: {
+          code: exception.code as ApiError["code"],
+          message: exception.message,
+          requestId,
+        },
+      };
+    }
+
     if (exception instanceof AppError) {
       return {
         status: exception.status,

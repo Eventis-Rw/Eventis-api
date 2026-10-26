@@ -6,11 +6,11 @@ import { LoggerModule } from "nestjs-pino";
 import { ConfigModule } from "./config/config.module.js";
 import { ENV, type Env } from "./config/env.js";
 import { PrismaModule } from "./infrastructure/database/prisma.module.js";
-import { IdentityModule } from "./modules/identity/index.js";
-import { EventsModule } from "./modules/events/index.js";
 import { StorageModule } from "./infrastructure/storage/storage.module.js";
+import { ChatModule } from "./modules/chat/index.js";
+import { EventsModule } from "./modules/events/index.js";
+import { IdentityModule } from "./modules/identity/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
-
 
 @Module({
   imports: [
@@ -53,6 +53,7 @@ import { PlatformModule } from "./modules/platform/index.js";
     PlatformModule,
     IdentityModule,
     EventsModule,
+    ChatModule,
   ],
 })
 export class AppModule {}
