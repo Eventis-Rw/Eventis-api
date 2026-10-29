@@ -38,10 +38,36 @@ describe("TokenService", () => {
     const issued = await tokens.issueAccessToken({
       sub: "11111111-1111-1111-1111-111111111111",
       role: "organizer_owner",
+      roles: ["admin", "organizer_owner"],
     });
     const claims = await tokens.verifyAccessToken(issued.token);
     expect(claims.sub).toBe("11111111-1111-1111-1111-111111111111");
-    expect(claims.role).toBe("organizer_owner");
+    expect(claims.roles).toEqual(["admin", "organizer_owner"]);
+  });
+
+  it("rejects access tokens with the wrong issuer or audience", async () => {
+    const secret = new TextEncoder().encode(env.JWT_ACCESS_SECRET);
+    const wrongIssuer = await new SignJWT({ roles: ["organizer_owner"] })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject("11111111-1111-1111-1111-111111111111")
+      .setIssuer("other-api")
+      .setAudience("eventis-app")
+      .setExpirationTime("1h")
+      .sign(secret);
+    await expect(tokens.verifyAccessToken(wrongIssuer)).rejects.toBeInstanceOf(
+      AppError,
+    );
+
+    const wrongAudience = await new SignJWT({ roles: ["organizer_owner"] })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject("11111111-1111-1111-1111-111111111111")
+      .setIssuer("eventis-api")
+      .setAudience("other-app")
+      .setExpirationTime("1h")
+      .sign(secret);
+    await expect(
+      tokens.verifyAccessToken(wrongAudience),
+    ).rejects.toBeInstanceOf(AppError);
   });
 
   it("rejects an expired access token", async () => {

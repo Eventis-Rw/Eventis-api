@@ -12,6 +12,10 @@ ALTER TABLE "conversations"
     ADD COLUMN "service" "messaging_service",
     ADD COLUMN "context_id" UUID;
 
+-- Prefixing legacy pair keys adds seven characters, so widen the column first.
+ALTER TABLE "conversations"
+    ALTER COLUMN "direct_pair_key" TYPE VARCHAR(100);
+
 UPDATE "conversations" SET "service" = 'EVENTIS' WHERE "service" IS NULL;
 
 UPDATE "conversations"
@@ -21,8 +25,7 @@ WHERE "direct_pair_key" IS NOT NULL
   AND "direct_pair_key" NOT LIKE 'EVENTIS:%';
 
 ALTER TABLE "conversations"
-    ALTER COLUMN "service" SET NOT NULL,
-    ALTER COLUMN "direct_pair_key" TYPE VARCHAR(100);
+    ALTER COLUMN "service" SET NOT NULL;
 
 CREATE INDEX "conversations_service_idx" ON "conversations"("service");
 CREATE INDEX "conversations_service_context_idx" ON "conversations"("service", "context_id");
