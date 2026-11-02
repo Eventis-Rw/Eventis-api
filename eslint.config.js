@@ -1,6 +1,14 @@
-import nest from '@eventis/eslint-config/nest';
+import nest from "@eventis/eslint-config/nest";
 
 export default [
-  { ignores: ['dist/**', 'drizzle/**', 'coverage/**', '*.config.js', 'eslint.config.js'] },
+  {
+    ignores: [
+      "dist/**",
+      "prisma/migrations/**",
+      "coverage/**",
+      "*.config.js",
+      "eslint.config.js",
+    ],
+  },
   ...nest,
 ];

@@ -29,7 +29,7 @@ HAVING SUM(amount_minor) <> 0;
 **If this returns rows, the constraint trigger is missing or was dropped.** That is the
 incident. Find out when and how — check the migration history and the audit log.
 
-Otherwise the entries are sound and the *cache* is wrong:
+Otherwise the entries are sound and the _cache_ is wrong:
 
 ```sql
 SELECT a.id, a.kind, b.balance_minor AS cached, SUM(e.amount_minor) AS actual

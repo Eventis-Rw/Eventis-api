@@ -1,20 +1,23 @@
 # 0003 — Drizzle over Prisma
 
-**Status:** Accepted · **Date:** 2026-09-14
+**Status:** Superseded by [0009](0009-prisma-over-drizzle.md) · **Date:** 2026-09-14
+
+> **Superseded on 2026-09-29.** The project now uses Prisma. This record is retained
+> so the original reasoning remains visible; do not treat it as current guidance.
 
 ## Context
 
 This will be argued about, so the reasoning is written down.
 
-| | Prisma | Drizzle |
-|---|---|---|
-| Intern ramp-up | easier, better errors, Prisma Studio | steeper, you must know SQL |
-| PostGIS geography column | `Unsupported()`, unusable through the client | `customType`, works |
-| Editable raw SQL migrations | awkward (`--create-only`) | migrations are plain SQL you own |
-| `CREATE INDEX CONCURRENTLY` | fights you | trivial |
-| Deferred constraint triggers | not expressible | trivial |
-| Generated tsvector column | not expressible | trivial |
-| Bundle size / cold start | heavy engine binary | thin |
+|                              | Prisma                                       | Drizzle                          |
+| ---------------------------- | -------------------------------------------- | -------------------------------- |
+| Intern ramp-up               | easier, better errors, Prisma Studio         | steeper, you must know SQL       |
+| PostGIS geography column     | `Unsupported()`, unusable through the client | `customType`, works              |
+| Editable raw SQL migrations  | awkward (`--create-only`)                    | migrations are plain SQL you own |
+| `CREATE INDEX CONCURRENTLY`  | fights you                                   | trivial                          |
+| Deferred constraint triggers | not expressible                              | trivial                          |
+| Generated tsvector column    | not expressible                              | trivial                          |
+| Bundle size / cold start     | heavy engine binary                          | thin                             |
 
 ## Decision
 

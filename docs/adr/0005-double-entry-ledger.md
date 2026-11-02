@@ -22,7 +22,7 @@ cannot be audited. When an organizer disputes a payout — and one will, within 
 launch — a balance column can only say what the number is now. Entries can say how it
 got there.
 
-A column also has no way to be *provably* right. Entries do: they must sum to zero.
+A column also has no way to be _provably_ right. Entries do: they must sum to zero.
 
 ## The two invariants live in SQL, not TypeScript
 

@@ -1,7 +1,7 @@
-import type { PipeTransform } from '@nestjs/common';
-import { type z } from 'zod';
+import type { PipeTransform } from "@nestjs/common";
+import { type z } from "zod";
 
-import { AppError } from '../errors/app-error.js';
+import { AppError } from "../errors/app-error.js";
 
 /**
  * Validates with a schema from @eventis/contracts and returns the parsed, typed value.
@@ -10,7 +10,10 @@ import { AppError } from '../errors/app-error.js';
  * shape of unvalidated input is how an unbounded string reaches a varchar column
  * and how a negative quantity reaches inventory.
  */
-export class ZodValidationPipe<T extends z.ZodType> implements PipeTransform<unknown, z.infer<T>> {
+export class ZodValidationPipe<T extends z.ZodType> implements PipeTransform<
+  unknown,
+  z.infer<T>
+> {
   constructor(private readonly schema: T) {}
 
   transform(value: unknown): z.infer<T> {
@@ -19,7 +22,7 @@ export class ZodValidationPipe<T extends z.ZodType> implements PipeTransform<unk
 
     const fields: Record<string, string[]> = {};
     for (const issue of result.error.issues) {
-      const key = issue.path.join('.') || '_';
+      const key = issue.path.join(".") || "_";
       (fields[key] ??= []).push(issue.message);
     }
     throw AppError.validation(fields);

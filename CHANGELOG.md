@@ -7,4 +7,5 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+
 - Initial repository structure, engineering standards, CI and documentation.

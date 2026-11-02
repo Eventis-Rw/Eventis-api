@@ -23,11 +23,12 @@ Check-in is an idempotent state transition through a conditional UPDATE — the 
 pattern as inventory reservation, and for the same reason:
 
 ```ts
-const [row] = await db.update(tickets)
-  .set({ status: 'checked_in', checkedInAt: now, checkedInBy: staffId, gate })
-  .where(and(eq(tickets.id, ticketId), eq(tickets.status, 'issued')))
+const [row] = await db
+  .update(tickets)
+  .set({ status: "checked_in", checkedInAt: now, checkedInBy: staffId, gate })
+  .where(and(eq(tickets.id, ticketId), eq(tickets.status, "issued")))
   .returning({ id: tickets.id });
-return row ? 'ADMITTED' : await explainRejection(ticketId);
+return row ? "ADMITTED" : await explainRejection(ticketId);
 ```
 
 Postgres evaluates the condition and the write in one atomic statement, so two scanners
