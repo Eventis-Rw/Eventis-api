@@ -20,37 +20,37 @@ check() {
 }
 
 check 'a module may not reach past another module index.ts' \
-  src/modules/orders/application/__violation.ts \
-  "import { EventRepository } from '../../events/infrastructure/event.repository.js';
-export const bad = EventRepository;"
+  src/modules/commerce/application/__violation.ts \
+  "import { CategoryRepository } from '../../catalog/infrastructure/category.repository.js';
+export const bad = CategoryRepository;"
 
 check 'domain may not import infrastructure' \
-  src/modules/events/domain/__violation.ts \
-  "import { EventRepository } from '../infrastructure/event.repository.js';
-export const bad = EventRepository;"
+  src/modules/catalog/domain/__violation.ts \
+  "import { CategoryRepository } from '../infrastructure/category.repository.js';
+export const bad = CategoryRepository;"
 
 check 'domain may not import the framework' \
-  src/modules/events/domain/__violation.ts \
+  src/modules/catalog/domain/__violation.ts \
   "import { Injectable } from '@nestjs/common';
 export const bad = Injectable;"
 
 check 'a controller may not import a repository' \
-  src/modules/events/api/__violation.ts \
-  "import { EventRepository } from '../infrastructure/event.repository.js';
-export const bad = EventRepository;"
+  src/modules/catalog/api/__violation.ts \
+  "import { CategoryRepository } from '../infrastructure/category.repository.js';
+export const bad = CategoryRepository;"
 
-check 'a controller may not import prisma' \
-  src/modules/events/api/__violation.ts \
-  "import { PrismaClient } from '@prisma/client';
-export const bad = PrismaClient;"
+check 'a controller may not import drizzle' \
+  src/modules/catalog/api/__violation.ts \
+  "import { eq } from 'drizzle-orm';
+export const bad = eq;"
 
 check 'a repository may not import its service' \
-  src/modules/events/infrastructure/__violation.ts \
-  "import { CreateEventService } from '../application/create-event.service.js';
-export const bad = CreateEventService;"
+  src/modules/catalog/infrastructure/__violation.ts \
+  "import { CatalogService } from '../application/catalog.service.js';
+export const bad = CatalogService;"
 
-check 'events may not reach the ledger' \
-  src/modules/events/application/__violation.ts \
+check 'catalog may not reach the ledger' \
+  src/modules/catalog/application/__violation.ts \
   "export { x } from '../../ledger/index.js';"
 
 echo

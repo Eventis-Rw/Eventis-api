@@ -1,9 +1,8 @@
-import { Controller, Get, VERSION_NEUTRAL } from "@nestjs/common";
+import { Controller, Get } from '@nestjs/common';
 
-import { HealthService } from "../application/health.service.js";
+import { HealthService } from '../application/health.service.js';
 
-/** Health probes stay unversioned and outside the /api prefix. */
-@Controller({ version: VERSION_NEUTRAL })
+@Controller()
 export class HealthController {
   constructor(private readonly health: HealthService) {}
 
@@ -12,13 +11,13 @@ export class HealthController {
    * a liveness probe that touches the database restarts a healthy API during a
    * database blip, turning a partial outage into a total one.
    */
-  @Get("healthz")
-  live(): { status: "ok" } {
-    return { status: "ok" };
+  @Get('/healthz')
+  live(): { status: 'ok' } {
+    return { status: 'ok' };
   }
 
   /** Readiness. Answers "can this process serve traffic", so it does check dependencies. */
-  @Get("readyz")
+  @Get('/readyz')
   async ready() {
     return this.health.readiness();
   }

@@ -12,8 +12,7 @@ ARG NODE_VERSION=22
 # ---------- dependencies ----------
 FROM oven/bun:${BUN_VERSION}-alpine AS deps
 WORKDIR /app
-COPY package.json bun.lock* ./
-COPY prisma ./prisma
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ---------- build ----------
@@ -25,8 +24,7 @@ RUN bun run build
 # ---------- production dependencies only ----------
 FROM oven/bun:${BUN_VERSION}-alpine AS prod-deps
 WORKDIR /app
-COPY package.json bun.lock* ./
-COPY prisma ./prisma
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 # ---------- runtime: bun ----------
@@ -35,7 +33,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/drizzle ./drizzle
 COPY package.json ./
 # Never run as root. A container escape should not start from uid 0.
 USER bun
@@ -49,7 +47,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/drizzle ./drizzle
 COPY package.json ./
 USER node
 EXPOSE 3000

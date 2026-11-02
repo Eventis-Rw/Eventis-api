@@ -1,17 +1,20 @@
-import type { IncomingMessage } from "node:http";
+import type { IncomingMessage } from 'node:http';
 
-import { Module } from "@nestjs/common";
-import { LoggerModule } from "nestjs-pino";
+import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
 
-import { ConfigModule } from "./config/config.module.js";
-import { ENV, type Env } from "./config/env.js";
-import { PrismaModule } from "./infrastructure/database/prisma.module.js";
-import { StorageModule } from "./infrastructure/storage/storage.module.js";
-import { ChatModule } from "./modules/chat/index.js";
-import { EventsModule } from "./modules/events/index.js";
-import { IdentityModule } from "./modules/identity/index.js";
-import { PlatformModule } from "./modules/platform/index.js";
+import { ConfigModule } from './config/config.module.js';
+import { ENV, type Env } from './config/env.js';
+import { DatabaseModule } from './infra/database/database.module.js';
+import { CatalogModule } from './modules/catalog/index.js';
+import { PlatformModule } from './modules/platform/index.js';
 
+/**
+ * The modular monolith. One deployable, one database, clear internal boundaries.
+ *
+ * Adding a module here is the last step, not the first — see
+ * docs/guides/adding-a-module.md.
+ */
 @Module({
   imports: [
     ConfigModule,
@@ -20,40 +23,36 @@ import { PlatformModule } from "./modules/platform/index.js";
       useFactory: (env: Env) => ({
         pinoHttp: {
           level: env.LOG_LEVEL,
-
-          ...(env.NODE_ENV === "development"
-            ? { transport: { target: "pino-pretty" } }
-            : {}),
-
+          // Pretty output locally; raw JSON everywhere else, because log shippers parse JSON.
+          // Spread rather than assign undefined — exactOptionalPropertyTypes means an
+          // explicit undefined is not the same as an absent key.
+          ...(env.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
+          /**
+           * Never log a full phone number, an OTP, a token, or a password. Redaction
+           * here is the backstop; not putting them in the log line is the control.
+           */
           redact: {
             paths: [
-              "req.headers.authorization",
-              "req.headers.cookie",
+              'req.headers.authorization',
+              'req.headers.cookie',
               'req.headers["idempotency-key"]',
-              "req.body.phone",
-              "req.body.code",
-              "req.body.payerPhone",
-              "req.body.refreshToken",
+              'req.body.phone',
+              'req.body.code',
+              'req.body.payerPhone',
+              'req.body.refreshToken',
               'res.headers["set-cookie"]',
             ],
-            censor: "[redacted]",
+            censor: '[redacted]',
           },
-          customProps: (req: IncomingMessage & { id?: string }) => ({
-            requestId: req.id,
-          }),
-
-          autoLogging: {
-            ignore: (req: IncomingMessage) => req.url === "/healthz",
-          },
+          customProps: (req: IncomingMessage & { id?: string }) => ({ requestId: req.id }),
+          // The liveness probe fires every few seconds. Logging it buries everything else.
+          autoLogging: { ignore: (req: IncomingMessage) => req.url === '/healthz' },
         },
       }),
     }),
-    PrismaModule,
-    StorageModule,
+    DatabaseModule,
     PlatformModule,
-    IdentityModule,
-    EventsModule,
-    ChatModule,
+    CatalogModule,
   ],
 })
 export class AppModule {}
