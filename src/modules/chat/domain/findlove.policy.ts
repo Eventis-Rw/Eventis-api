@@ -9,10 +9,7 @@ import {
 } from "./messaging-policy.js";
 
 function profilesCompatible(ctx: StartCtx): boolean {
-  return (
-    ctx.actor.profileType === ctx.peer.profileType &&
-    (ctx.actor.profileType === "PRIVATE" || ctx.actor.profileType === "PUBLIC")
-  );
+  return ctx.actor.profileType === ctx.peer.profileType;
 }
 
 function evaluateStart(ctx: StartCtx): PolicyDecision {
@@ -31,7 +28,11 @@ function evaluateStart(ctx: StartCtx): PolicyDecision {
 
 function evaluateSend(ctx: SendCtx): PolicyDecision {
   if (ctx.blocked) return deny("BLOCKED");
-  if (!ctx.connection || ctx.connection.status === "REJECTED" || ctx.connection.status === "CANCELLED") {
+  if (
+    !ctx.connection ||
+    ctx.connection.status === "REJECTED" ||
+    ctx.connection.status === "CANCELLED"
+  ) {
     return deny("REQUEST_NOT_ACCEPTED");
   }
   if (ctx.connection.status === "ACCEPTED") return ALLOWED;

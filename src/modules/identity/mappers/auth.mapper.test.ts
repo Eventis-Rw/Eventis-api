@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { User } from "../domain/user.js";
+
 import { toAuthRoles } from "./auth.mapper.js";
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -10,6 +11,7 @@ const user = (overrides: Partial<User> = {}): User => ({
   lastName: "Uwase",
   email: null,
   accountType: "POSTER",
+  findLoveProfileType: "PRIVATE",
   role: "ADMIN",
   organizationName: null,
   organizationDescription: null,

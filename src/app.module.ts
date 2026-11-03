@@ -10,6 +10,7 @@ import { StorageModule } from "./infrastructure/storage/storage.module.js";
 import { ChatModule } from "./modules/chat/index.js";
 import { EventsModule } from "./modules/events/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
+import { PaymentsModule } from "./modules/payments/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 
 @Module({
@@ -54,6 +55,7 @@ import { PlatformModule } from "./modules/platform/index.js";
     IdentityModule,
     EventsModule,
     ChatModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
