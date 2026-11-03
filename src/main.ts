@@ -38,6 +38,7 @@ async function bootstrap(): Promise<void> {
     adapter,
     {
       bufferLogs: true,
+      rawBody: true,
     },
   );
 

@@ -12,24 +12,29 @@ describe("StatusesService.create", () => {
       mimetype: "image/jpeg",
       data: Buffer.from("image"),
     };
-    const uploadStatusMedia = mock(
-      async () => "https://cdn.example/status.jpg",
+    const uploadStatusMedia = mock(() =>
+      Promise.resolve("https://cdn.example/status.jpg"),
     );
-    const create = mock(async (input: Record<string, unknown>) => ({
-      ...input,
-      id: "22222222-2222-2222-2222-222222222222",
-      user: {
-        organizationName: "My Events",
-        firstName: null,
-        lastName: null,
-        avatarUrl: null,
-      },
-      _count: { views: 0 },
-    }));
-    const repository = { ownsPublishedEvent: mock(async () => true), create };
+    const create = mock((input: Record<string, unknown>) =>
+      Promise.resolve({
+        ...input,
+        id: "22222222-2222-2222-2222-222222222222",
+        user: {
+          organizationName: "My Events",
+          firstName: null,
+          lastName: null,
+          avatarUrl: null,
+        },
+        _count: { views: 0 },
+      }),
+    );
+    const repository = {
+      ownsPublishedEvent: mock(() => Promise.resolve(true)),
+      create,
+    };
     const storage = {
       uploadStatusMedia,
-      deleteFile: mock(async () => undefined),
+      deleteFile: mock(() => Promise.resolve(undefined)),
     };
     const clock = { now: () => now };
     const service = new StatusesService(

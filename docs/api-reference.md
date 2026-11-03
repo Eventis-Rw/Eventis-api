@@ -20,20 +20,32 @@ Swagger UI loads its presentation bundle from `unpkg.com`, so the UI needs an in
 
 ## Route inventory
 
-| Method | URL                              | Authentication      |
-| ------ | -------------------------------- | ------------------- |
-| GET    | `/healthz`                       | No                  |
-| GET    | `/readyz`                        | No                  |
-| POST   | `/api/v1/auth/request-otp`       | No                  |
-| POST   | `/api/v1/auth/login`             | No                  |
-| POST   | `/api/v1/auth/signup`            | No                  |
-| POST   | `/api/v1/auth/signup/send-otp`   | No                  |
-| POST   | `/api/v1/auth/signup/verify-otp` | No                  |
-| POST   | `/api/v1/auth/verify-otp`        | No                  |
-| POST   | `/api/v1/auth/refresh`           | No                  |
-| POST   | `/api/v1/auth/logout`            | Bearer access token |
-| GET    | `/api/v1/auth/me`                | Bearer access token |
-| PATCH  | `/api/v1/users/me`               | Bearer access token |
+| Method | URL                                      | Authentication      |
+| ------ | ---------------------------------------- | ------------------- |
+| GET    | `/healthz`                               | No                  |
+| GET    | `/readyz`                                | No                  |
+| POST   | `/api/v1/auth/request-otp`               | No                  |
+| POST   | `/api/v1/auth/login`                     | No                  |
+| POST   | `/api/v1/auth/signup`                    | No                  |
+| POST   | `/api/v1/auth/signup/send-otp`           | No                  |
+| POST   | `/api/v1/auth/signup/verify-otp`         | No                  |
+| POST   | `/api/v1/auth/verify-otp`                | No                  |
+| POST   | `/api/v1/auth/refresh`                   | No                  |
+| POST   | `/api/v1/auth/logout`                    | Bearer access token |
+| GET    | `/api/v1/auth/me`                        | Bearer access token |
+| PATCH  | `/api/v1/users/me`                       | Bearer access token |
+| GET    | `/api/v1/installments`                   | No                  |
+| POST   | `/api/v1/payments`                       | Bearer access token |
+| GET    | `/api/v1/payments/{id}/status`           | Bearer access token |
+| POST   | `/api/v1/payments/webhook`               | Provider signature  |
+| GET    | `/api/v1/findlove/account-types`         | No                  |
+| GET    | `/api/v1/findlove/subscription`          | Bearer access token |
+| PATCH  | `/api/v1/findlove/account-type`          | Bearer access token |
+| GET    | `/api/v1/admin/payments`                 | Admin               |
+| GET    | `/api/v1/admin/installments`             | Admin               |
+| POST   | `/api/v1/admin/installments`             | Admin               |
+| PATCH  | `/api/v1/admin/installments/{id}`        | Admin               |
+| PATCH  | `/api/v1/admin/installments/{id}/status` | Admin               |
 
 ## Image upload test flow
 
@@ -146,5 +158,40 @@ their messages and old direct pairs. Apply pending migrations with
 `bun run db:migrate` before serving chat routes. Invitation URLs use
 `MOBILE_APP_SCHEME` (default `mobile`) and require a matching deep-link route
 in the mobile application.
+
+## FindLove installments and mobile money
+
+FindLove subscriptions are paid directly with MTN Mobile Money or Airtel Money.
+There is no wallet, token balance or client-supplied amount. The payable amount
+always comes from the selected admin-managed installment plan.
+
+1. `GET /api/v1/installments?account_type=private` lists active plans. Prices
+   are integer minor-unit strings; RWF uses zero decimal places.
+2. `POST /api/v1/payments` with `account_type`, `installment_id`,
+   `payment_method` (`mtn_momo` or `airtel_money`) and `phone_number` starts a
+   collection. Send an `Idempotency-Key` header (8–120 characters) so retries
+   return the same payment instead of creating another one.
+3. `GET /api/v1/payments/{id}/status` accepts the returned `payment_id`
+   (`PAY-...`) or the internal UUID. Status values are `pending`, `succeeded`,
+   `failed`, `cancelled`, `expired` and `unknown`. `unknown` means the provider
+   has not confirmed an outcome; check again rather than starting a duplicate
+   payment.
+4. Provider webhooks arrive at `POST /api/v1/payments/webhook`. In aggregator
+   mode the raw body must carry a valid `x-payment-signature` HMAC SHA256
+   signature using `PAYMENT_WEBHOOK_SECRET`. Events are deduplicated by
+   `event_id`.
+
+MTN numbers use the `078`/`079` prefixes and Airtel numbers use `072`/`073`.
+Successful provider confirmation activates or extends the FindLove
+subscription automatically and switches the profile to the purchased account
+type. `GET /api/v1/findlove/subscription` returns the current subscription;
+`PATCH /api/v1/findlove/account-type` switches between `private` and `public`
+when no conflicting paid subscription is active.
+
+Admins manage plans at `/api/v1/admin/installments` and inspect payments at
+`GET /api/v1/admin/payments`. `PAYMENT_PROVIDER=fake` is for local development
+only and is rejected in production. `PAYMENT_PROVIDER=aggregator` requires
+`PAYMENT_PROVIDER_BASE_URL`, `PAYMENT_PROVIDER_API_KEY` and
+`PAYMENT_WEBHOOK_SECRET`.
 
 Errors share the `code`, `message` and `requestId` envelope; validation errors may also include `fields`, and throttling errors may include `retryAfterSeconds`. OTPs, access tokens, refresh tokens and device credentials shown as placeholders must be replaced with values from your running environment.

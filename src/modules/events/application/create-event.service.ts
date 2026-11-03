@@ -25,7 +25,6 @@ export interface CreateEventInput {
   posterId: string;
 }
 
-
 @Injectable()
 export class CreateEventService {
   constructor(
@@ -95,7 +94,7 @@ export class CreateEventService {
         try {
           await this.storage.deleteFile(uploadedCover);
         } catch {
-
+          // Best-effort cleanup; the original persistence error is more useful.
         }
       }
       if (error instanceof Error && /Invalid (time|date)/.test(error.message)) {

@@ -15,6 +15,45 @@ const CATEGORIES = [
   { slug: "education", name: "Education", iconKey: "book", position: 100 },
 ];
 
+const INSTALLMENT_PLANS = [
+  {
+    accountType: "PRIVATE",
+    interval: "WEEKLY",
+    durationDays: 7,
+    priceMinor: 5000n,
+  },
+  {
+    accountType: "PRIVATE",
+    interval: "MONTHLY",
+    durationDays: 30,
+    priceMinor: 15000n,
+  },
+  {
+    accountType: "PRIVATE",
+    interval: "YEARLY",
+    durationDays: 365,
+    priceMinor: 120000n,
+  },
+  {
+    accountType: "PUBLIC",
+    interval: "WEEKLY",
+    durationDays: 7,
+    priceMinor: 8000n,
+  },
+  {
+    accountType: "PUBLIC",
+    interval: "MONTHLY",
+    durationDays: 30,
+    priceMinor: 25000n,
+  },
+  {
+    accountType: "PUBLIC",
+    interval: "YEARLY",
+    durationDays: 365,
+    priceMinor: 200000n,
+  },
+] as const;
+
 loadEnv();
 const prisma = new PrismaClient();
 
@@ -27,6 +66,23 @@ try {
         name: category.name,
         iconKey: category.iconKey,
         position: category.position,
+      },
+    });
+  }
+
+  for (const plan of INSTALLMENT_PLANS) {
+    await prisma.installmentPlan.upsert({
+      where: {
+        accountType_interval: {
+          accountType: plan.accountType,
+          interval: plan.interval,
+        },
+      },
+      create: plan,
+      update: {
+        durationDays: plan.durationDays,
+        priceMinor: plan.priceMinor,
+        isActive: true,
       },
     });
   }
@@ -61,7 +117,7 @@ try {
   }
 
   console.warn(
-    `seeded ${CATEGORIES.length} categories and the reference event`,
+    `seeded ${CATEGORIES.length} categories, ${INSTALLMENT_PLANS.length} FindLove installment plans and the reference event`,
   );
 } finally {
   await prisma.$disconnect();

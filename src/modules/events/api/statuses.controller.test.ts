@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createStatusSchema } from "./statuses.schema.js";
 
 describe("createStatusSchema", () => {
