@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 
+import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { StorageService, type UploadedFile } from "../../../infrastructure/storage/storage.service.js";
 import type { User } from "../domain/user.js";
@@ -48,6 +49,20 @@ export const updateProfileSchema = z
     bio: z.string().trim().max(10000).nullable().optional(),
     location: z.string().trim().max(160).nullable().optional(),
     interestedIn: z.string().trim().max(30).nullable().optional(),
+    username: z
+      .string()
+      .trim()
+      .min(3)
+      .max(30)
+      .regex(
+        /^[a-zA-Z0-9._]+$/,
+        "username may contain letters, numbers, dots and underscores",
+      )
+      .nullable()
+      .optional(),
+    posterKind: z.enum(["INDIVIDUAL", "BUSINESS"]).optional(),
+    profileVisibility: z.enum(["PUBLIC", "PRIVATE"]).optional(),
+    termsVersion: z.string().trim().min(1).max(20).nullable().optional(),
   })
   .refine(
     (value) => Object.keys(value).length > 0,
@@ -72,6 +87,11 @@ type EditableUserProfile = {
       | "bio"
       | "location"
       | "interestedIn"
+      | "username"
+      | "posterKind"
+      | "termsVersion"
+      | "termsAcceptedAt"
+      | "profileVisibility"
     >
   ]?: User[Key];
 };
@@ -81,6 +101,7 @@ export class UpdateProfileService {
   constructor(
     private readonly users: UserRepository,
     private readonly storage: StorageService,
+    private readonly clock: Clock,
   ) {}
 
   async execute(
@@ -129,6 +150,19 @@ export class UpdateProfileService {
       if (input.location !== undefined) data.location = input.location;
       if (input.interestedIn !== undefined)
         data.interestedIn = input.interestedIn;
+      if (input.username !== undefined) {
+        data.username = input.username === null ? null : input.username.trim();
+      }
+      if (input.posterKind !== undefined) data.posterKind = input.posterKind;
+      if (input.profileVisibility !== undefined) {
+        data.profileVisibility = input.profileVisibility;
+      }
+      if (input.termsVersion !== undefined) {
+        data.termsVersion =
+          input.termsVersion === null ? null : input.termsVersion;
+        data.termsAcceptedAt =
+          input.termsVersion === null ? null : this.clock.now();
+      }
       const user = await this.users.updateProfile(userId, data);
       persistedAvatar = true;
       if (newAvatarKey) {
@@ -155,6 +189,16 @@ export class UpdateProfileService {
         "code" in error &&
         error.code === "P2002"
       ) {
+        const target =
+          "meta" in error &&
+          typeof error.meta === "object" &&
+          error.meta !== null &&
+          "target" in error.meta
+            ? String(error.meta.target)
+            : "";
+        if (target.includes("username")) {
+          throw new AppError("FORBIDDEN", "Username is already in use", 409);
+        }
         throw new AppError("FORBIDDEN", "Email address is already in use", 409);
       }
       throw error;

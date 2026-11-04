@@ -108,6 +108,8 @@ export interface ParticipantRecord {
   lastReadAt: Date | null;
   isArchived: boolean;
   isMuted: boolean;
+  hiddenAt: Date | null;
+  clearedBeforeMessageId: string | null;
 }
 
 export interface AttachmentRecord {
@@ -117,6 +119,9 @@ export interface AttachmentRecord {
   mimeType: string;
   sizeBytes: number;
   storageKey: string;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
   createdAt: Date;
 }
 
@@ -137,6 +142,7 @@ export interface MessageRecord {
   content: string | null;
   replyToId: string | null;
   clientMessageId: string | null;
+  forwardedFromId: string | null;
   createdAt: Date;
   updatedAt: Date;
   editedAt: Date | null;

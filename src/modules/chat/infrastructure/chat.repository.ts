@@ -114,7 +114,11 @@ export class ChatRepository {
     const where: Prisma.ConversationWhereInput = {
       service: input.service,
       participants: {
-        some: { userId: input.userId, isArchived: input.archived },
+        some: {
+          userId: input.userId,
+          isArchived: input.archived,
+          hiddenAt: null,
+        },
       },
     };
     const skip = (input.page - 1) * input.limit;
@@ -186,6 +190,93 @@ export class ChatRepository {
     return toParticipant(row);
   }
 
+  async findLatestMessage(
+    conversationId: string,
+  ): Promise<{ id: string; createdAt: Date } | null> {
+    const row = await this.prisma.message.findFirst({
+      where: { conversationId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true, createdAt: true },
+    });
+    return row;
+  }
+
+  async clearConversation(input: {
+    conversationId: string;
+    userId: string;
+    hiddenAt: Date;
+    clearedBeforeMessageId: string | null;
+  }): Promise<void> {
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+        },
+      },
+      data: {
+        hiddenAt: input.hiddenAt,
+        clearedBeforeMessageId: input.clearedBeforeMessageId,
+      },
+    });
+  }
+
+  async unhideConversation(input: {
+    conversationId: string;
+    userId: string;
+  }): Promise<void> {
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+        },
+      },
+      data: { hiddenAt: null },
+    });
+  }
+
+  async upsertContactAliases(
+    ownerId: string,
+    contacts: Array<{
+      phone: string;
+      contactUserId: string | null;
+      firstName: string;
+      lastName: string | null;
+    }>,
+  ): Promise<void> {
+    if (!contacts.length) return;
+    await this.prisma.$transaction(
+      contacts.map((contact) =>
+        this.prisma.contactAlias.upsert({
+          where: {
+            ownerId_phone: { ownerId, phone: contact.phone },
+          },
+          create: {
+            ownerId,
+            phone: contact.phone,
+            contactUserId: contact.contactUserId,
+            firstName: contact.firstName,
+            lastName: contact.lastName,
+          },
+          update: {
+            contactUserId: contact.contactUserId,
+            firstName: contact.firstName,
+            lastName: contact.lastName,
+          },
+        }),
+      ),
+    );
+  }
+
+  async listContactAliases(ownerId: string) {
+    return this.prisma.contactAlias.findMany({
+      where: { ownerId },
+      orderBy: [{ firstName: "asc" }, { phone: "asc" }],
+      take: 500,
+    });
+  }
+
   async findMessageById(id: string): Promise<MessageRecord | null> {
     const row = await this.prisma.message.findUnique({
       where: { id },
@@ -214,6 +305,7 @@ export class ChatRepository {
     content: string | null;
     replyToId: string | null;
     clientMessageId: string | null;
+    forwardedFromId?: string | null;
     recipientParticipantIds: string[];
     now: Date;
     pendingSenderLimit?: number;
@@ -242,6 +334,7 @@ export class ChatRepository {
           content: input.content,
           replyToId: input.replyToId,
           clientMessageId: input.clientMessageId,
+          forwardedFromId: input.forwardedFromId ?? null,
           createdAt: input.now,
           updatedAt: input.now,
           receipts: {
@@ -266,6 +359,7 @@ export class ChatRepository {
     conversationId: string;
     limit: number;
     beforeId?: string;
+    after?: Date;
   }): Promise<MessageRecord[]> {
     let before: { createdAt: Date; id: string } | undefined;
     if (input.beforeId) {
@@ -280,6 +374,7 @@ export class ChatRepository {
     const rows = await this.prisma.message.findMany({
       where: {
         conversationId: input.conversationId,
+        ...(input.after ? { createdAt: { gt: input.after } } : {}),
         ...(before
           ? {
               OR: [
@@ -322,9 +417,44 @@ export class ChatRepository {
     mimeType: string;
     sizeBytes: number;
     storageKey: string;
+    durationMs?: number | null;
+    width?: number | null;
+    height?: number | null;
   }): Promise<AttachmentRecord> {
     const row = await this.prisma.messageAttachment.create({
-      data: input,
+      data: {
+        messageId: input.messageId,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        storageKey: input.storageKey,
+        durationMs: input.durationMs ?? null,
+        width: input.width ?? null,
+        height: input.height ?? null,
+      },
+    });
+    return toAttachment(row);
+  }
+
+  async updateAttachmentMetadata(input: {
+    id: string;
+    durationMs?: number | null;
+    width?: number | null;
+    height?: number | null;
+  }): Promise<AttachmentRecord | null> {
+    const existing = await this.prisma.messageAttachment.findUnique({
+      where: { id: input.id },
+    });
+    if (!existing) return null;
+    const row = await this.prisma.messageAttachment.update({
+      where: { id: input.id },
+      data: {
+        ...(input.durationMs !== undefined
+          ? { durationMs: input.durationMs }
+          : {}),
+        ...(input.width !== undefined ? { width: input.width } : {}),
+        ...(input.height !== undefined ? { height: input.height } : {}),
+      },
     });
     return toAttachment(row);
   }
@@ -712,6 +842,8 @@ function toParticipant(row: PrismaParticipant): ParticipantRecord {
     lastReadAt: row.lastReadAt,
     isArchived: row.isArchived,
     isMuted: row.isMuted,
+    hiddenAt: row.hiddenAt,
+    clearedBeforeMessageId: row.clearedBeforeMessageId,
   };
 }
 
@@ -755,6 +887,9 @@ function toAttachment(row: PrismaAttachment): AttachmentRecord {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     storageKey: row.storageKey,
+    durationMs: row.durationMs,
+    width: row.width,
+    height: row.height,
     createdAt: row.createdAt,
   };
 }
@@ -784,6 +919,7 @@ function toMessage(
     content: row.content,
     replyToId: row.replyToId,
     clientMessageId: row.clientMessageId,
+    forwardedFromId: row.forwardedFromId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     editedAt: row.editedAt,

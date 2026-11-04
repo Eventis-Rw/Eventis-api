@@ -106,6 +106,16 @@ const createCallSchema = z.object({
 const updateCallSchema = z.object({
   status: z.enum(["ACCEPTED", "REJECTED", "MISSED", "CANCELLED", "ENDED"]),
 });
+const forwardSchema = z.object({
+  conversationIds: z.array(z.string().uuid()).min(1).max(10),
+});
+const attachmentMetadataSchema = z
+  .object({
+    durationMs: z.coerce.number().int().min(0).nullable().optional(),
+    width: z.coerce.number().int().min(1).nullable().optional(),
+    height: z.coerce.number().int().min(1).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0);
 
 @Controller({ path: "chat", version: "1" })
 @UseGuards(JwtAuthGuard)
@@ -128,6 +138,11 @@ export class ChatController {
     body: z.infer<typeof createConversationSchema>,
   ) {
     return this.chat.createConversation(userId, body);
+  }
+
+  @Get("contacts/aliases")
+  listContactAliases(@CurrentUserId() userId: string) {
+    return this.chat.listContactAliases(userId);
   }
 
   @Get("conversations")
@@ -174,6 +189,43 @@ export class ChatController {
     @Body(zodPipe(sendMessageSchema)) body: z.infer<typeof sendMessageSchema>,
   ) {
     return this.chat.sendMessage(userId, id, body);
+  }
+
+  @Post("messages/:id/forward")
+  forwardMessage(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(forwardSchema)) body: z.infer<typeof forwardSchema>,
+  ) {
+    return this.chat.forwardMessage(userId, id, body.conversationIds);
+  }
+
+  @Delete("conversations/:id")
+  @HttpCode(200)
+  clearConversation(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.clearConversation(userId, id);
+  }
+
+  @Post("conversations/:id/unhide")
+  @HttpCode(200)
+  unhideConversation(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.unhideConversation(userId, id);
+  }
+
+  @Patch("attachments/:id/metadata")
+  updateAttachmentMetadata(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(attachmentMetadataSchema))
+    body: z.infer<typeof attachmentMetadataSchema>,
+  ) {
+    return this.chat.updateAttachmentMetadata(userId, id, body);
   }
 
   @Post("conversations/:id/messages/attachments")

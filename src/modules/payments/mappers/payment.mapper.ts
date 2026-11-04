@@ -47,8 +47,14 @@ export interface InitiatePaymentResponse extends PaymentResponse {
   message: string;
 }
 
-export interface AdminPaymentResponse extends PaymentResponse {
+export interface AdminPaymentResponse
+  extends Omit<
+    PaymentResponse,
+    "account_type" | "installment_id" | "installment"
+  > {
   id: string;
+  account_type: "private" | "public" | null;
+  installment_id: string | null;
   user: {
     id: string;
     phone: string;
@@ -56,7 +62,7 @@ export interface AdminPaymentResponse extends PaymentResponse {
     first_name: string | null;
     last_name: string | null;
   };
-  installment: InstallmentPlanResponse;
+  installment: InstallmentPlanResponse | null;
 }
 
 export interface AccountSubscriptionResponse {
@@ -91,7 +97,7 @@ export function toInstallmentPlanResponse(
   };
 }
 
-export function toPaymentResponse(payment: PaymentIntent): PaymentResponse {
+function toPaymentBase(payment: PaymentIntent) {
   return {
     payment_id: payment.reference,
     payment_status: toPublicPaymentStatus(payment.status),
@@ -99,14 +105,23 @@ export function toPaymentResponse(payment: PaymentIntent): PaymentResponse {
     amount_minor: toWire(payment.amountMinor),
     currency: payment.currency,
     phone_number: payment.phoneNumber,
-    account_type: toApiAccountType(payment.accountType),
-    installment_id: payment.installmentPlanId,
     provider_transaction_id: payment.providerTransactionId,
     failure_reason: payment.failureReason,
     expires_at: payment.expiresAt.toISOString(),
     paid_at: payment.paidAt?.toISOString() ?? null,
     created_at: payment.createdAt.toISOString(),
     updated_at: payment.updatedAt.toISOString(),
+  };
+}
+
+export function toPaymentResponse(payment: PaymentIntent): PaymentResponse {
+  if (!payment.accountType || !payment.installmentPlanId) {
+    throw new Error("FindLove payment is missing plan details");
+  }
+  return {
+    ...toPaymentBase(payment),
+    account_type: toApiAccountType(payment.accountType),
+    installment_id: payment.installmentPlanId,
   };
 }
 
@@ -125,8 +140,15 @@ export function toAdminPaymentResponse(
   payment: AdminPaymentIntent,
 ): AdminPaymentResponse {
   return {
-    ...toPaymentResponse(payment),
+    ...toPaymentBase(payment),
     id: payment.id,
+    account_type: payment.accountType
+      ? toApiAccountType(payment.accountType)
+      : null,
+    installment_id: payment.installmentPlanId,
+    installment: payment.plan
+      ? toInstallmentPlanResponse(payment.plan)
+      : null,
     user: {
       id: payment.user.id,
       phone: payment.user.phone,
@@ -134,7 +156,6 @@ export function toAdminPaymentResponse(
       first_name: payment.user.firstName,
       last_name: payment.user.lastName,
     },
-    installment: toInstallmentPlanResponse(payment.plan),
   };
 }
 

@@ -458,6 +458,9 @@ function toPaymentDomain(row: PrismaPaymentIntent): PaymentIntent {
 }
 
 function toPaymentWithPlanDomain(row: PaymentWithPlan): PaymentIntentWithPlan {
+  if (!row.installmentPlan) {
+    throw new Error("Payment intent is missing an installment plan");
+  }
   return {
     ...toPaymentDomain(row),
     plan: toInstallmentPlanDomain(row.installmentPlan),
@@ -467,7 +470,9 @@ function toPaymentWithPlanDomain(row: PaymentWithPlan): PaymentIntentWithPlan {
 function toAdminPaymentDomain(row: AdminPaymentRow): AdminPaymentIntent {
   return {
     ...toPaymentDomain(row),
-    plan: toInstallmentPlanDomain(row.installmentPlan),
+    plan: row.installmentPlan
+      ? toInstallmentPlanDomain(row.installmentPlan)
+      : null,
     user: {
       id: row.user.id,
       phone: row.user.phone,

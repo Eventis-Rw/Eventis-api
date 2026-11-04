@@ -3,6 +3,7 @@ import type {
   OtpVerification as PrismaOtp,
   User as PrismaUser,
   RefreshSession as PrismaSession,
+  Prisma,
 } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
@@ -180,10 +181,18 @@ export class UserRepository {
         | "bio"
         | "location"
         | "interestedIn"
+        | "username"
+        | "posterKind"
+        | "termsVersion"
+        | "termsAcceptedAt"
+        | "profileVisibility"
       >
     >,
   ): Promise<User> {
-    const row = await this.prisma.user.update({ where: { id: userId }, data });
+    const row = await this.prisma.user.update({
+      where: { id: userId },
+      data: data as Prisma.UserUpdateInput,
+    });
     return toUserDomain(row);
   }
 
@@ -360,6 +369,13 @@ function toUserDomain(row: PrismaUser): User {
     displayName: row.displayName,
     avatarUrl: row.avatarUrl,
     pinHash: row.pinHash,
+    username: row.username,
+    posterKind: row.posterKind,
+    termsVersion: row.termsVersion,
+    termsAcceptedAt: row.termsAcceptedAt,
+    profileVisibility: row.profileVisibility,
+    lastSeenAt: row.lastSeenAt,
+    deletedAt: row.deletedAt,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
