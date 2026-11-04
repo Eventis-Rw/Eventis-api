@@ -42,6 +42,7 @@ import { ChatRateLimiter } from "../infrastructure/chat-rate-limiter.js";
 import { ChatRealtimePublisher } from "../infrastructure/chat-realtime.publisher.js";
 import { ChatRepository } from "../infrastructure/chat.repository.js";
 import {
+  toAttachmentResponse,
   toCallResponse,
   toConversationResponse,
   toInvitationResponse,
@@ -108,6 +109,23 @@ export class ChatService {
     const profiles = await this.users.byPhones(phoneNumbers);
     const byPhone = new Map(
       profiles.map((profile) => [profile.phone, profile]),
+    );
+    await this.chat.upsertContactAliases(
+      userId,
+      normalized.flatMap((contact) => {
+        if (!contact.phoneNumber) return [];
+        const matched = byPhone.get(contact.phoneNumber);
+        const fallback = splitName(contact.name);
+        return [
+          {
+            phone: contact.phoneNumber,
+            contactUserId: matched?.id ?? null,
+            firstName:
+              matched?.firstName ?? fallback.firstName ?? "Contact",
+            lastName: matched?.lastName ?? fallback.lastName,
+          },
+        ];
+      }),
     );
     return {
       contacts: normalized.map((contact) => {
@@ -290,10 +308,21 @@ export class ChatService {
         });
       }
     }
+    const participant = (
+      await this.chat.findConversationById(conversationId)
+    )?.participants.find((item) => item.userId === userId);
+    let after: Date | undefined;
+    if (participant?.clearedBeforeMessageId) {
+      const cleared = await this.chat.findMessageById(
+        participant.clearedBeforeMessageId,
+      );
+      after = cleared?.createdAt;
+    }
     const rows = await this.chat.listMessages({
       conversationId,
       limit: input.limit + 1,
       ...(input.beforeId ? { beforeId: input.beforeId } : {}),
+      ...(after ? { after } : {}),
     });
     const hasMore = rows.length > input.limit;
     const messages = hasMore ? rows.slice(1) : rows;
@@ -598,6 +627,135 @@ export class ChatService {
       ...object,
       fileName: attachment.fileName,
       mimeType: attachment.mimeType,
+    };
+  }
+
+  async listContactAliases(userId: string) {
+    const rows = await this.chat.listContactAliases(userId);
+    return {
+      items: rows.map((row) => ({
+        phone: row.phone,
+        contactUserId: row.contactUserId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async forwardMessage(
+    userId: string,
+    messageId: string,
+    conversationIds: string[],
+  ) {
+    const source = await this.chat.findMessageById(messageId);
+    if (!source || source.deletedAt) throw AppError.notFound("Message");
+    await this.requireConversation(userId, source.conversationId);
+    const targets = [...new Set(conversationIds)];
+    if (!targets.length || targets.length > 10) {
+      throw AppError.validation({
+        conversationIds: ["Choose between 1 and 10 conversations"],
+      });
+    }
+    const forwarded = [];
+    for (const conversationId of targets) {
+      this.rateLimiter.consume(
+        `message:${userId}`,
+        this.clock.now(),
+        MESSAGE_RATE.max,
+        MESSAGE_RATE.windowMs,
+      );
+      const conversation = await this.requireConversation(
+        userId,
+        conversationId,
+      );
+      const sendFacts = await this.assertCanSend(userId, conversation);
+      let message = await this.chat.createMessage({
+        conversationId,
+        senderId: userId,
+        type: source.type,
+        content: source.content,
+        replyToId: null,
+        clientMessageId: null,
+        forwardedFromId: source.id,
+        recipientParticipantIds: conversation.participants
+          .filter((participant) => participant.userId !== userId)
+          .map((participant) => participant.id),
+        now: this.clock.now(),
+        ...(sendFacts.connection?.status === "PENDING"
+          ? { pendingSenderLimit: 1 }
+          : {}),
+      });
+      for (const attachment of source.attachments) {
+        await this.chat.addAttachment({
+          messageId: message.id,
+          fileName: attachment.fileName,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          storageKey: attachment.storageKey,
+          durationMs: attachment.durationMs,
+          width: attachment.width,
+          height: attachment.height,
+        });
+      }
+      if (source.attachments.length) {
+        message =
+          (await this.chat.findMessageById(message.id)) ?? message;
+      }
+      this.publishMessage(conversation, message);
+      forwarded.push(toMessageResponse(message));
+    }
+    return { items: forwarded };
+  }
+
+  async clearConversation(userId: string, conversationId: string) {
+    await this.requireConversation(userId, conversationId);
+    const latest = await this.chat.findLatestMessage(conversationId);
+    await this.chat.clearConversation({
+      conversationId,
+      userId,
+      hiddenAt: this.clock.now(),
+      clearedBeforeMessageId: latest?.id ?? null,
+    });
+    return { conversationId, cleared: true };
+  }
+
+  async unhideConversation(userId: string, conversationId: string) {
+    await this.requireConversation(userId, conversationId);
+    await this.chat.unhideConversation({ conversationId, userId });
+    return { conversationId, hidden: false };
+  }
+
+  async updateAttachmentMetadata(
+    userId: string,
+    attachmentId: string,
+    input: {
+      durationMs?: number | null | undefined;
+      width?: number | null | undefined;
+      height?: number | null | undefined;
+    },
+  ) {
+    const attachment = await this.chat.findAttachmentById(attachmentId);
+    if (!attachment) throw AppError.notFound("Attachment");
+    const message = await this.chat.findMessageById(attachment.messageId);
+    if (!message || message.deletedAt) throw AppError.notFound("Attachment");
+    const conversation = await this.requireConversation(
+      userId,
+      attachment.conversationId,
+    );
+    if (message.senderId !== userId) throw AppError.forbidden();
+    const updated = await this.chat.updateAttachmentMetadata({
+      id: attachmentId,
+      ...(input.durationMs !== undefined
+        ? { durationMs: input.durationMs }
+        : {}),
+      ...(input.width !== undefined ? { width: input.width } : {}),
+      ...(input.height !== undefined ? { height: input.height } : {}),
+    });
+    if (!updated) throw AppError.notFound("Attachment");
+    return {
+      ...toAttachmentResponse(updated),
+      conversationId: conversation.id,
     };
   }
 
@@ -1033,6 +1191,18 @@ export class ChatService {
     );
     return facts;
   }
+}
+
+function splitName(name: string | null): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: null, lastName: null };
+  return {
+    firstName: parts[0] ?? null,
+    lastName: parts.slice(1).join(" ") || null,
+  };
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

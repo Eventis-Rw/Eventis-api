@@ -32,8 +32,8 @@ export interface PaymentIntent {
   readonly id: string;
   readonly reference: string;
   readonly userId: string;
-  readonly installmentPlanId: string;
-  readonly accountType: FindLoveAccountType;
+  readonly installmentPlanId: string | null;
+  readonly accountType: FindLoveAccountType | null;
   readonly amountMinor: bigint;
   readonly currency: string;
   readonly paymentMethod: PaymentMethod;
@@ -54,7 +54,11 @@ export interface PaymentIntentWithPlan extends PaymentIntent {
   readonly plan: InstallmentPlan;
 }
 
-export interface AdminPaymentIntent extends PaymentIntentWithPlan {
+export interface AdminPaymentIntent extends Omit<
+  PaymentIntentWithPlan,
+  "plan"
+> {
+  readonly plan: InstallmentPlan | null;
   readonly user: {
     readonly id: string;
     readonly phone: string;

@@ -28,8 +28,6 @@ playwright-report/
 openapi.json
 
 # Environment and secrets — never commit. This repository is public.
-.env
-.env.*
 !.env.example
 *.pem
 *.p8
@@ -48,7 +46,6 @@ Desktop.ini
 
 # Editors / IDEs
 .idea/
-.vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
 *.swp
@@ -74,3 +71,4 @@ docker/docker-compose.override.yml
 # After the first npm publish, commit a real bun.lock and delete these lines.
 bun.lock
 bun.lockb
+config.bat

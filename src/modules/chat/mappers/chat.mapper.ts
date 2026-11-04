@@ -15,6 +15,7 @@ export interface ParticipantResponse {
   lastReadAt: string | null;
   isArchived: boolean;
   isMuted: boolean;
+  hiddenAt: string | null;
   profile: ChatPublicProfile | null;
 }
 
@@ -25,6 +26,9 @@ export interface AttachmentResponse {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
   downloadPath: string;
   createdAt: string;
 }
@@ -44,6 +48,7 @@ export interface MessageResponse {
   content: string | null;
   replyToId: string | null;
   clientMessageId: string | null;
+  forwardedFromId: string | null;
   createdAt: string;
   updatedAt: string;
   editedAt: string | null;
@@ -103,6 +108,9 @@ export function toAttachmentResponse(
     fileName: row.fileName,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
+    durationMs: row.durationMs,
+    width: row.width,
+    height: row.height,
     downloadPath: `/api/v1/chat/attachments/${row.id}/content`,
     createdAt: row.createdAt.toISOString(),
   };
@@ -118,6 +126,7 @@ export function toMessageResponse(row: MessageRecord): MessageResponse {
     content: deleted ? null : row.content,
     replyToId: row.replyToId,
     clientMessageId: row.clientMessageId,
+    forwardedFromId: row.forwardedFromId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     editedAt: row.editedAt?.toISOString() ?? null,
@@ -142,6 +151,7 @@ export function toParticipantResponse(
     lastReadAt: row.lastReadAt?.toISOString() ?? null,
     isArchived: row.isArchived,
     isMuted: row.isMuted,
+    hiddenAt: row.hiddenAt?.toISOString() ?? null,
     profile: profiles.get(row.userId) ?? null,
   };
 }

@@ -1,7 +1,11 @@
 export type MessagingService = "FINDLOVE" | "EVENTIS";
 export type LoveProfileType = "PRIVATE" | "PUBLIC";
 export type ConnectionStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
-export type EventLifecycleStatus = "draft" | "published" | "cancelled";
+export type EventLifecycleStatus =
+  | "draft"
+  | "published"
+  | "paused"
+  | "cancelled";
 export type ConversationStartSource = "CONVERSATION" | "INVITE";
 
 export type PolicyErrorCode =

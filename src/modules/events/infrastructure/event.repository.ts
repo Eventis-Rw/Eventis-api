@@ -14,23 +14,30 @@ export class EventRepository {
     description: string | null;
     coverImage: string | null;
     category: string | null;
+    categoryId: string | null;
     location: string;
+    city: string | null;
+    latitude: number | null;
+    longitude: number | null;
     startDate: Date;
     time: string;
+    endDate: Date | null;
+    endTime: string | null;
+    timezone: string;
     status: EventStatus;
+    capacity: number | null;
+    isPaid: boolean;
+    priceMinor: bigint | null;
+    currency: string;
+    bookingUrl: string | null;
+    instructions: string | null;
+    tags: string[];
+    organisationId: string | null;
     posterId: string;
   }): Promise<Event> {
     const row = await this.prisma.event.create({
       data: {
-        title: input.title,
-        description: input.description,
-        coverImage: input.coverImage,
-        category: input.category,
-        location: input.location,
-        startDate: input.startDate,
-        time: input.time,
-        status: input.status,
-        posterId: input.posterId,
+        ...input,
         viewsCount: 0,
       },
     });
@@ -87,24 +94,30 @@ export class EventRepository {
       description: string | null;
       coverImage: string | null;
       category: string | null;
+      categoryId: string | null;
       location: string;
+      city: string | null;
+      latitude: number | null;
+      longitude: number | null;
       startDate: Date;
       time: string;
+      endDate: Date | null;
+      endTime: string | null;
+      timezone: string;
       status: EventStatus;
+      capacity: number | null;
+      isPaid: boolean;
+      priceMinor: bigint | null;
+      currency: string;
+      bookingUrl: string | null;
+      instructions: string | null;
+      tags: string[];
+      organisationId: string | null;
     },
   ): Promise<Event> {
     const row = await this.prisma.event.update({
       where: { eventId },
-      data: {
-        title: input.title,
-        description: input.description,
-        coverImage: input.coverImage,
-        category: input.category,
-        location: input.location,
-        startDate: input.startDate,
-        time: input.time,
-        status: input.status,
-      },
+      data: input,
     });
     return toDomain(row);
   }
@@ -130,11 +143,28 @@ function toDomain(row: PrismaEvent): Event {
     description: row.description,
     coverImage: row.coverImage,
     category: row.category,
+    categoryId: row.categoryId,
     location: row.location,
+    city: row.city,
+    latitude: row.latitude?.toNumber() ?? null,
+    longitude: row.longitude?.toNumber() ?? null,
     startDate: row.startDate,
     time: row.time,
+    endDate: row.endDate,
+    endTime: row.endTime,
+    timezone: row.timezone,
     status: row.status,
+    capacity: row.capacity,
+    isPaid: row.isPaid,
+    priceMinor: row.priceMinor,
+    currency: row.currency,
+    bookingUrl: row.bookingUrl,
+    instructions: row.instructions,
+    tags: row.tags,
+    organisationId: row.organisationId,
     viewsCount: row.viewsCount,
+    ratingAvg: Number(row.ratingAvg),
+    reviewCount: row.reviewCount,
     posterId: row.posterId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

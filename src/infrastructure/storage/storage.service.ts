@@ -202,6 +202,54 @@ export class StorageService {
     return { data: Buffer.from(await response.arrayBuffer()), contentType };
   }
 
+  async uploadPublicPurposeImage(
+    userId: string,
+    purpose: string,
+    file: { mimetype: string; data: Buffer; filename: string },
+  ): Promise<string> {
+    this.validateImage(file, "file");
+    const ext =
+      extname(file.filename).toLowerCase() || extensionForMime(file.mimetype);
+    const key = `uploads/${purpose.toLowerCase()}/${userId}/${randomUUID()}${ext}`;
+    return this.uploadImage(key, file.data, file.mimetype);
+  }
+
+  async uploadPrivateDocument(
+    userId: string,
+    purpose: string,
+    file: { mimetype: string; data: Buffer; filename: string },
+  ): Promise<string> {
+    const allowed = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+    ];
+    if (!allowed.includes(file.mimetype)) {
+      throw AppError.validation({
+        file: ["Choose a JPEG, PNG, WebP or PDF file"],
+      });
+    }
+    if (file.mimetype.startsWith("image/")) {
+      this.validateImage(file, "file");
+    }
+    if (file.data.length > 10 * 1024 * 1024) {
+      throw AppError.validation({
+        file: ["Document size exceeds the 10MB limit"],
+      });
+    }
+    const ext =
+      extname(file.filename).toLowerCase() || extensionForMime(file.mimetype);
+    const key = `private/${purpose.toLowerCase()}/${userId}/${randomUUID()}${ext}`;
+    const response = await this.request("PUT", key, file.data, file.mimetype);
+    if (!response.ok) {
+      throw new Error(
+        `Object storage upload failed with status ${response.status}`,
+      );
+    }
+    return key;
+  }
+
   async uploadAvatarImage(
     userId: string,
     file: { mimetype: string; data: Buffer; filename: string },

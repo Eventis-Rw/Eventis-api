@@ -16,10 +16,25 @@ export interface CreateEventInput {
   title: string;
   description?: string | null | undefined;
   category?: string | null | undefined;
+  categoryId?: string | null | undefined;
   location: string;
+  city?: string | null | undefined;
+  latitude?: number | null | undefined;
+  longitude?: number | null | undefined;
   startDate: Date;
   time: string;
+  endDate?: Date | null | undefined;
+  endTime?: string | null | undefined;
+  timezone?: string | undefined;
   status?: EventStatus | undefined;
+  capacity?: number | null | undefined;
+  isPaid?: boolean | undefined;
+  priceMinor?: bigint | null | undefined;
+  currency?: string | undefined;
+  bookingUrl?: string | null | undefined;
+  instructions?: string | null | undefined;
+  tags?: string[] | undefined;
+  organisationId?: string | null | undefined;
   coverImage?: string | null | undefined;
   coverFile?: CreateEventCoverFile | undefined;
   posterId: string;
@@ -46,27 +61,32 @@ export class CreateEventService {
           title: input.title,
           description: input.description,
           category: input.category,
+          categoryId: input.categoryId,
           location: input.location,
+          city: input.city,
+          latitude: input.latitude,
+          longitude: input.longitude,
           startDate: input.startDate,
           time: input.time,
+          endDate: input.endDate,
+          endTime: input.endTime,
+          timezone: input.timezone,
           status: input.status,
+          capacity: input.capacity,
+          isPaid: input.isPaid,
+          priceMinor: input.priceMinor,
+          currency: input.currency,
+          bookingUrl: input.bookingUrl,
+          instructions: input.instructions,
+          tags: input.tags,
+          organisationId: input.organisationId,
           coverImage: input.coverFile ? null : (input.coverImage ?? null),
           posterId: input.posterId,
         },
         this.clock.now(),
       );
 
-      const created = await this.events.create({
-        title: draft.title,
-        description: draft.description,
-        coverImage: draft.coverImage,
-        category: draft.category,
-        location: draft.location,
-        startDate: draft.startDate,
-        time: draft.time,
-        status: draft.status,
-        posterId: draft.posterId,
-      });
+      const created = await this.events.create(repositoryInput(draft));
 
       if (input.coverFile) {
         const key = await this.storage.uploadCoverImage(
@@ -75,14 +95,8 @@ export class CreateEventService {
         );
         uploadedCover = key;
         const updated = await this.events.update(created.eventId, {
-          title: created.title,
-          description: created.description,
+          ...repositoryInput(created),
           coverImage: key,
-          category: created.category,
-          location: created.location,
-          startDate: created.startDate,
-          time: created.time,
-          status: created.status,
         });
         persistedCover = true;
         return updated;
@@ -103,4 +117,33 @@ export class CreateEventService {
       throw error;
     }
   }
+}
+
+function repositoryInput(event: ReturnType<typeof createEvent>) {
+  return {
+    title: event.title,
+    description: event.description,
+    coverImage: event.coverImage,
+    category: event.category,
+    categoryId: event.categoryId,
+    location: event.location,
+    city: event.city,
+    latitude: event.latitude,
+    longitude: event.longitude,
+    startDate: event.startDate,
+    time: event.time,
+    endDate: event.endDate,
+    endTime: event.endTime,
+    timezone: event.timezone,
+    status: event.status,
+    capacity: event.capacity,
+    isPaid: event.isPaid,
+    priceMinor: event.priceMinor,
+    currency: event.currency,
+    bookingUrl: event.bookingUrl,
+    instructions: event.instructions,
+    tags: event.tags,
+    organisationId: event.organisationId,
+    posterId: event.posterId,
+  };
 }

@@ -29,7 +29,12 @@ export const EVENTIS_MESSAGING_CONFIG: EventisMessagingConfig = {
   requireSubscription: false,
   requirePublishingPayment: false,
   allowCreateWhenEventStatus: ["published"],
-  allowContinueWhenEventStatus: ["draft", "published", "cancelled"],
+  allowContinueWhenEventStatus: [
+    "draft",
+    "published",
+    "paused",
+    "cancelled",
+  ],
   allowPhoneInvites: true,
   allowGroupsWithoutEvent: true,
 };
