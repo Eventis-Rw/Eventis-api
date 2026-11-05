@@ -4,7 +4,7 @@ import { type z } from "zod";
 import { AppError } from "../errors/app-error.js";
 
 /**
- * Validates with a schema from @eventis/contracts and returns the parsed, typed value.
+ * Validates with a schema from ../../contracts/index.js and returns the parsed, typed value.
  *
  * This is the only way a request body or query enters a controller. Trusting the
  * shape of unvalidated input is how an unbounded string reaches a varchar column

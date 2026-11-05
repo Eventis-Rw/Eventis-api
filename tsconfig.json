@@ -1,10 +1,17 @@
 {
-  "extends": "@eventis/tsconfig/nest.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "noEmit": true,
-    "types": ["bun-types", "node"]
+    "types": [
+      "bun-types",
+      "node"
+    ]
   },
-  "include": ["src/**/*", "test/**/*", "scripts/**/*"]
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "scripts/**/*"
+  ]
 }

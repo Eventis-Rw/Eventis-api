@@ -1,6 +1,5 @@
-import { maskPhone } from "@eventis/contracts";
-
 import { loadEnv } from "../src/config/env.js";
+import { maskPhone } from "../src/contracts/index.js";
 import { generateOtpCode } from "../src/modules/identity/domain/otp.js";
 import { normalizeRwandaPhone } from "../src/modules/identity/domain/phone.js";
 import { AfricasTalkingSmsProvider } from "../src/modules/identity/infrastructure/sms/africas-talking.provider.js";

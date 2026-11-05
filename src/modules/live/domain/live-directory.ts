@@ -1,4 +1,4 @@
-import type { LiveListing, StartLiveRequest } from '@eventis/contracts';
+import type { LiveListing, StartLiveRequest } from '../../../contracts/index.js';
 
 export const LIVE_POLICY = {
   capacity: 5,

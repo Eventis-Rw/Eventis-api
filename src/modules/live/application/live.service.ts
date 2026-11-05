@@ -1,5 +1,10 @@
 import { createHash, createHmac } from 'node:crypto';
 
+import { Inject, Injectable } from '@nestjs/common';
+
+import { Clock } from '../../../common/clock.js';
+import { AppError } from '../../../common/errors/app-error.js';
+import { ENV, type Env } from '../../../config/env.js';
 import {
   ERROR_CODES,
   type LiveDirectory,
@@ -7,12 +12,7 @@ import {
   type LiveStartResult,
   type LiveWatchSession,
   type StartLiveRequest,
-} from '@eventis/contracts';
-import { Inject, Injectable } from '@nestjs/common';
-
-import { Clock } from '../../../common/clock.js';
-import { AppError } from '../../../common/errors/app-error.js';
-import { ENV, type Env } from '../../../config/env.js';
+} from '../../../contracts/index.js';
 import {
   claimQueue,
   LIVE_POLICY,

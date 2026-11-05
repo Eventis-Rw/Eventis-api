@@ -1,7 +1,7 @@
-import type { LogoutRequest } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
+import type { LogoutRequest } from "../../../contracts/index.js";
 import { RefreshSessionRepository } from "../infrastructure/identity.repository.js";
 import { TokenService } from "../infrastructure/token.service.js";
 

@@ -1,5 +1,6 @@
-import { maskPhone } from "@eventis/contracts";
 import { Injectable, Logger } from "@nestjs/common";
+
+import { maskPhone } from "../../../../contracts/index.js";
 
 import type { SendSmsInput, SmsProvider } from "./sms-provider.js";
 

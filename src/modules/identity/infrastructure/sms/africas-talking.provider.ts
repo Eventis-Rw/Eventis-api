@@ -1,8 +1,8 @@
-import { ERROR_CODES, maskPhone } from "@eventis/contracts";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 
 import { AppError } from "../../../../common/errors/app-error.js";
 import { ENV, type Env } from "../../../../config/env.js";
+import { ERROR_CODES, maskPhone } from "../../../../contracts/index.js";
 
 import type { SendSmsInput, SmsProvider } from "./sms-provider.js";
 

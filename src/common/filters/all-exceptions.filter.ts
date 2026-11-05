@@ -1,4 +1,3 @@
-import { ERROR_CODES, type ApiError } from "@eventis/contracts";
 import {
   Catch,
   HttpException,
@@ -8,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import { ERROR_CODES, type ApiError } from "../../contracts/index.js";
 import { AppError } from "../errors/app-error.js";
 
 

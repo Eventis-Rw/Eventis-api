@@ -1,5 +1,7 @@
 # 0004 — REST with shared Zod schemas, not tRPC
 
+
+Package distribution is superseded by [ADR 0010](0010-self-contained-api.md). The REST and Zod decision remains; contracts now live in `src/contracts`.
 **Status:** Accepted · **Date:** 2026-09-14
 
 ## Context

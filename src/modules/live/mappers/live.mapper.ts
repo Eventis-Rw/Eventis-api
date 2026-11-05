@@ -2,8 +2,7 @@ import type {
   LiveHostReservation,
   LiveListing,
   LiveQueueTicket,
-} from '@eventis/contracts';
-
+} from '../../../contracts/index.js';
 import {
   LIVE_POLICY,
   type DirectoryState,

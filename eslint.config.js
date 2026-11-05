@@ -1,4 +1,4 @@
-import nest from "@eventis/eslint-config/nest";
+import nest from "./config/eslint/nest.config.js";
 
 export default [
   {

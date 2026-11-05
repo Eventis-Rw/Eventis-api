@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
+import { ERROR_CODES } from "../../../contracts/index.js";
 import {
   hasExceededAttempts,
   isOtpExpired,

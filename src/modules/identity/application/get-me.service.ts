@@ -1,7 +1,7 @@
-import type { SessionUser } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { AppError } from "../../../common/errors/app-error.js";
+import type { SessionUser } from "../../../contracts/index.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";
 import { toSessionUser } from "../mappers/auth.mapper.js";
 

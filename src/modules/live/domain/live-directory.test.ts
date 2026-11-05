@@ -1,5 +1,6 @@
-import type { StartLiveRequest } from '@eventis/contracts';
 import { describe, expect, it } from 'bun:test';
+
+import type { StartLiveRequest } from '../../../contracts/index.js';
 
 import {
   claimQueue,

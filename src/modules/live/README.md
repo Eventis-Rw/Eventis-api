@@ -1,10 +1,10 @@
 # Live directory (development)
 
-A shared directory for the mobile app's event-focused Live flow. LiveKit carries media; this module coordinates discoverable sessions and queue places. Contracts are in `@eventis/contracts` (`live.ts`). Identity, verified eligibility, production token grants and payments are not implemented by this module.
+A shared directory for the mobile app's event-focused Live flow. LiveKit carries media; this module coordinates discoverable sessions and queue places. Contracts are in `src/contracts/live.ts`. Identity, verified eligibility, production token grants and payments are not implemented by this module.
 
 ## Enable locally
 
-Set `LIVE_DEVELOPMENT_ACCESS=true` in the local API `.env`, build the contracts package and API, and start the existing Redis service. Access is disabled by default and refused outside development/test. Development mode intentionally allows repeated test sessions; it does not claim to verify genuine views, account age, organiser approval or daily eligibility.
+Set `LIVE_DEVELOPMENT_ACCESS=true` in the local API `.env`, build the API, and start the existing Redis service. Access is disabled by default and refused outside development/test. Development mode intentionally allows repeated test sessions; it does not claim to verify genuine views, account age, organiser approval or daily eligibility.
 
 ## Endpoints
 

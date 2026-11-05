@@ -3,7 +3,6 @@ import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-import { REQUEST_ID_HEADER } from "@eventis/contracts";
 import { Logger, VersioningType } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import {
@@ -15,6 +14,7 @@ import { Logger as PinoLogger } from "nestjs-pino";
 import { AppModule } from "./app.module.js";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
 import { ENV, type Env } from "./config/env.js";
+import { REQUEST_ID_HEADER } from "./contracts/index.js";
 import {
   assertSupportedRuntime,
   runtimeName,

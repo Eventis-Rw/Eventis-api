@@ -40,7 +40,7 @@ Do not pre-create empty folders for every future module. Create them when you st
 the work. Planned modules are listed in
 [docs/architecture/overview.md](../architecture/overview.md).
 
-2. **Add the API layer** — controller + DTOs (Zod schemas; prefer `@eventis/contracts`
+2. **Add the API layer** — controller + DTOs (Zod schemas; prefer `src/contracts`
    once the contract PR lands).
 3. **Add application use cases** — one service file per use case when that keeps
    boundaries clear (see `create-event.service.ts`).
@@ -65,7 +65,7 @@ bun run verify
 - Prisma belongs in infrastructure.
 - Modules must not directly access another module's database implementation.
 - Do not import internal implementation details from another module.
-- Shared HTTP contracts belong in `@eventis/contracts`.
+- Shared HTTP contracts belong in `src/contracts`.
 - External providers must be isolated behind infrastructure interfaces.
 - Do not put secrets in source control.
 

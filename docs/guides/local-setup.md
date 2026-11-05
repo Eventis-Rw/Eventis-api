@@ -6,40 +6,16 @@ Target: a running stack in under 30 minutes. **If it takes longer, the setup is 
 
 - [Bun](https://bun.sh) 1.4.2 or later — `curl -fsSL https://bun.sh/install | bash`
 - Docker Desktop (or Engine), running
-- A local clone of [Eventis-contracts](https://github.com/Eventis-Rw/Eventis-contracts)
-  until `@eventis/*` packages are published to npm (see below)
+- Node.js 22+
 
-## Shared packages (required until npm publish)
-
-`@eventis/contracts`, `@eventis/eslint-config` and `@eventis/tsconfig` are **not** on
-the public npm registry yet. Without linking them, `bun install` fails.
-
-```bash
-git clone https://github.com/Eventis-Rw/Eventis-contracts.git
-cd Eventis-contracts
-bun install
-bun run --filter @eventis/contracts build
-cd packages/contracts && bun link
-cd ../eslint-config && bun link
-cd ../tsconfig && bun link
-```
-
-Then in this repository:
-
-```bash
-bun link @eventis/contracts @eventis/eslint-config @eventis/tsconfig
-```
-
-Undo with `bun unlink` **before you commit** a lockfile. A linked dependency in a
-committed lockfile breaks CI for everyone else.
+Contracts, TypeScript settings, and lint rules are included in this repository. No sibling repository or package linking is required.
 
 ## Steps
 
 ```bash
 git clone https://github.com/Eventis-Rw/Eventis-api.git
 cd Eventis-api
-# link packages first (see above), then:
-bun install
+bun install --frozen-lockfile
 
 cp .env.example .env
 bun run scripts/generate-keys.ts >> .env     # fills in the JWT and ticket signing keys
@@ -107,11 +83,8 @@ bun run dev:worker
 
 ## Common problems
 
-**`bun install` fails on `@eventis/*`.** Packages are not published yet. Link them
-from Eventis-contracts as above.
-
-**`db:migrate` cannot connect.** Docker is not up, or something else holds port 5432:
-`docker compose -f docker/docker-compose.yml ps` and `lsof -i :5432`.
+**`db:migrate` cannot connect.** Docker is not up, or something else holds port 5433:
+`docker compose -f docker/docker-compose.yml ps` and `lsof -i :5433`.
 
 **PostGIS functions missing.** You are on a plain `postgres` image instead of
 `postgis/postgis`. Use the compose file.

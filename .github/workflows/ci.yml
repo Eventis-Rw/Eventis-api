@@ -31,6 +31,9 @@ jobs:
         with: { bun-version: 1.4.2 }
       - run: bun install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        run: bun run prisma:generate
+
       - name: Lint
         run: bun run lint
       - name: Typecheck

@@ -1,6 +1,7 @@
 
-import { category, eventDetail, eventSummary, order, orderPaymentState, remoteConfig, ticket } from "@eventis/contracts";
 import { z } from "zod";
+
+import { category, eventDetail, eventSummary, order, orderPaymentState, remoteConfig, ticket } from "./contracts/index.js";
 
 const schemas = {
   Category: category,

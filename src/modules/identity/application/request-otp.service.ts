@@ -1,11 +1,11 @@
-import {
-  ERROR_CODES,
-  type OtpRequestResponse,
-} from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
+import {
+  ERROR_CODES,
+  type OtpRequestResponse,
+} from "../../../contracts/index.js";
 import {
   OTP_DAILY_LIMIT_PER_PHONE,
   OTP_RESEND_COOLDOWN_MS,

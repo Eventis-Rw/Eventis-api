@@ -34,6 +34,7 @@ FROM oven/bun:${BUN_VERSION}-alpine AS runtime-bun
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
@@ -48,6 +49,7 @@ FROM node:${NODE_VERSION}-alpine AS runtime-node
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./

@@ -188,28 +188,10 @@ The same file picker is available on the profile update operation in Swagger.
 
 ## Quick start
 
-> **`@eventis/*` packages are not on npm yet.** Link them from
-> [Eventis-contracts](https://github.com/Eventis-Rw/Eventis-contracts) first — see
-> [docs/guides/local-setup.md](docs/guides/local-setup.md). Without that step,
-> `bun install` cannot resolve `@eventis/contracts`, `@eventis/eslint-config` or
-> `@eventis/tsconfig`.
-
-
-# 1. Start the PostgreSQL database container in the background
-docker compose -f docker/docker-compose.yml up -d db
-
-# 2. Run Prisma migrations to synchronize database schema
-bunx prisma migrate dev
-
-# 3. Compile TypeScript code and update generated types
-bun run build
-
-# 4. Launch the NestJS API application server
-bun run dev
-
+API schemas and tooling are included in this repository. See [local setup](docs/guides/local-setup.md) for prerequisites.
 
 ```bash
-bun install
+bun install --frozen-lockfile
 cp .env.example .env
 bun run scripts/generate-keys.ts >> .env
 docker compose -f docker/docker-compose.yml up -d
@@ -327,7 +309,7 @@ Full walkthrough: [docs/guides/adding-a-module.md](docs/guides/adding-a-module.m
 - Prisma belongs in infrastructure
 - Modules must not touch another module's database implementation
 - Do not import internals past another module's `index.ts`
-- Shared contracts belong in `@eventis/contracts`
+- HTTP contracts belong in `src/contracts`
 - External providers stay behind infrastructure interfaces
 - Do not put secrets in source control
 

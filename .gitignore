@@ -68,9 +68,3 @@ temp/
 # Docker local overrides (compose override for personal ports/secrets)
 docker-compose.override.yml
 docker/docker-compose.override.yml
-
-# TEMPORARY — remove this block once @eventis/* packages are published to npm.
-# Local bun link rewrites the lockfile; committing it breaks other clones / CI.
-# After the first npm publish, commit a real bun.lock and delete these lines.
-bun.lock
-bun.lockb

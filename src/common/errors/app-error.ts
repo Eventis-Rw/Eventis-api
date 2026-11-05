@@ -1,4 +1,4 @@
-import { ERROR_CODES, type ErrorCode } from "@eventis/contracts";
+import { ERROR_CODES, type ErrorCode } from "../../contracts/index.js";
 
 export class AppError extends Error {
   constructor(

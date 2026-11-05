@@ -1,5 +1,4 @@
-import type { AuthSession, AuthTokens, SessionUser } from "@eventis/contracts";
-
+import type { AuthSession, AuthTokens, SessionUser } from "../../../contracts/index.js";
 import type { AccountType, User } from "../domain/user.js";
 
 

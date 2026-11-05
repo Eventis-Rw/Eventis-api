@@ -1,10 +1,4 @@
 import {
-  liveHeartbeatRequest,
-  startLiveRequest,
-  type LiveHeartbeatRequest,
-  type StartLiveRequest,
-} from '@eventis/contracts';
-import {
   Body,
   Controller,
   Delete,
@@ -17,6 +11,12 @@ import {
 
 import { AppError } from '../../../common/errors/app-error.js';
 import { zodPipe } from '../../../common/pipes/zod-validation.pipe.js';
+import {
+  liveHeartbeatRequest,
+  startLiveRequest,
+  type LiveHeartbeatRequest,
+  type StartLiveRequest,
+} from '../../../contracts/index.js';
 import { LiveService } from '../application/live.service.js';
 
 function bearer(value?: string): string {

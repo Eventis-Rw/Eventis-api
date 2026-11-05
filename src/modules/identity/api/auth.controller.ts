@@ -1,14 +1,4 @@
 import {
-  logoutRequest,
-  refreshRequest,
-  type AuthSession,
-  type AuthTokens,
-  type LogoutRequest,
-  type OtpRequestResponse,
-  type RefreshRequest,
-  type SessionUser,
-} from "@eventis/contracts";
-import {
   Body,
   Controller,
   Get,
@@ -19,6 +9,16 @@ import {
 import { z } from "zod";
 
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
+import {
+  logoutRequest,
+  refreshRequest,
+  type AuthSession,
+  type AuthTokens,
+  type LogoutRequest,
+  type OtpRequestResponse,
+  type RefreshRequest,
+  type SessionUser,
+} from "../../../contracts/index.js";
 import { GetMeService } from "../application/get-me.service.js";
 import { LoginService } from "../application/login.service.js";
 import { LogoutService } from "../application/logout.service.js";

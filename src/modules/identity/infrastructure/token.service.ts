@@ -1,10 +1,10 @@
-import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 import { SignJWT, jwtVerify, errors as JoseErrors } from "jose";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, loadEnv, type Env } from "../../../config/env.js";
+import { ERROR_CODES } from "../../../contracts/index.js";
 import {
   generateRefreshToken,
   hashSecret,

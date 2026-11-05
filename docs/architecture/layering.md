@@ -48,7 +48,7 @@ write ledger entries is a module that can lose money.
 | `application/`    | `domain/`, `infrastructure/`, other modules' `index.ts` | —                                                 |
 | `domain/`         | **nothing**                                             | every other layer, Prisma, `@nestjs/*`, the clock |
 | `infrastructure/` | `domain/`, Prisma                                       | `api/`, `application/`                            |
-| `mappers/`        | `domain/`, `@eventis/contracts` (when available)        | `api/`, `infrastructure/`, Prisma                 |
+| `mappers/`        | `domain/`, `src/contracts`        | `api/`, `infrastructure/`, Prisma                 |
 
 The strictest rule is the most valuable one: **`domain/` imports nothing.** A pure
 domain layer can be tested by calling it, which means the rules that decide whether an

@@ -33,10 +33,9 @@
     "db:seed": "bun run scripts/seed.ts",
     "prisma:generate": "prisma generate",
     "openapi": "bun run scripts/generate-openapi.ts",
-    "verify": "bun run lint && bun run typecheck && bun run depcruise && bun run depcruise:verify && bun run guard:money && bun run test && bun run build"
+    "verify": "bun run prisma:generate && bun run lint && bun run typecheck && bun run depcruise && bun run depcruise:verify && bun run guard:money && bun run test && bun run build"
   },
   "dependencies": {
-    "@eventis/contracts": "link:@eventis/contracts",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.1",
     "@fastify/multipart": "^10.1.2",
@@ -59,8 +58,6 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
-    "@eventis/eslint-config": "link:@eventis/eslint-config",
-    "@eventis/tsconfig": "link:@eventis/tsconfig",
     "@nestjs/testing": "^12.0.1",
     "@types/bun": "^1.4.2",
     "dependency-cruiser": "^18.3.0",
@@ -69,6 +66,13 @@
     "pino-pretty": "^13.1.2",
     "prettier": "^3.9.6",
     "prisma": "6.16.2",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "@eslint/js": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-node": "^0.3.9",
+    "eslint-plugin-import-x": "^4.17.1",
+    "globals": "^17.12.0",
+    "typescript-eslint": "^8.70.0",
+    "eslint-import-resolver-typescript": "^4.4.5"
   }
 }

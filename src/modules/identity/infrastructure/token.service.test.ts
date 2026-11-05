@@ -1,10 +1,10 @@
-import { ERROR_CODES } from "@eventis/contracts";
 import { beforeAll, describe, expect, it } from "bun:test";
 import { SignJWT } from "jose";
 
 import { SystemClock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { loadEnv } from "../../../config/env.js";
+import { ERROR_CODES } from "../../../contracts/index.js";
 
 import { TokenService } from "./token.service.js";
 
