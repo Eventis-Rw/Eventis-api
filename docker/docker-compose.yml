@@ -35,7 +35,7 @@ services:
 
   # Local S3, standing in for Cloudflare R2.
   minio:
-    image: minio/minio
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: eventis

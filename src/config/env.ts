@@ -14,6 +14,7 @@ const envSchema = z
     NODE_ENV: z
       .enum(["development", "test", "staging", "production"])
       .default("development"),
+    LIVE_DEVELOPMENT_ACCESS: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])

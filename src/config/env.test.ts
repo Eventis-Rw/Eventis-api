@@ -17,6 +17,11 @@ const valid = {
 };
 
 describe("loadEnv", () => {
+  it("defaults Live development access to off and parses explicit opt-in", () => {
+    expect(loadEnv(valid).LIVE_DEVELOPMENT_ACCESS).toBe(false);
+    expect(loadEnv({ ...valid, LIVE_DEVELOPMENT_ACCESS: "true" }).LIVE_DEVELOPMENT_ACCESS).toBe(true);
+    expect(loadEnv({ ...valid, LIVE_DEVELOPMENT_ACCESS: "false" }).LIVE_DEVELOPMENT_ACCESS).toBe(false);
+  });
   it("applies defaults for anything optional", () => {
     const env = loadEnv(valid);
     expect(env.PORT).toBe(3000);

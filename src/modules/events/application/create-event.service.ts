@@ -95,7 +95,7 @@ export class CreateEventService {
         try {
           await this.storage.deleteFile(uploadedCover);
         } catch {
-
+          // Preserve the original creation error if cleanup also fails.
         }
       }
       if (error instanceof Error && /Invalid (time|date)/.test(error.message)) {

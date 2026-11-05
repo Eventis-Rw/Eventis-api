@@ -1,13 +1,15 @@
 import { Module } from "@nestjs/common";
 
+import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { ENV, type Env } from "../../config/env.js";
 import { StorageModule } from "../../infrastructure/storage/storage.module.js";
 import { PlatformModule } from "../platform/index.js";
 
-import { AuthController } from "./api/auth.controller.js";
 import { AdminUsersController } from "./api/admin-users.controller.js";
+import { AuthController } from "./api/auth.controller.js";
 import { JwtAuthGuard } from "./api/jwt-auth.guard.js";
 import { UsersController } from "./api/users.controller.js";
+import { AdminUsersService } from "./application/admin-users.service.js";
 import { GetMeService } from "./application/get-me.service.js";
 import { LoginService } from "./application/login.service.js";
 import { LogoutService } from "./application/logout.service.js";
@@ -25,7 +27,6 @@ import { AfricasTalkingSmsProvider } from "./infrastructure/sms/africas-talking.
 import { FakeSmsProvider } from "./infrastructure/sms/fake-sms.provider.js";
 import { SMS_PROVIDER } from "./infrastructure/sms/sms-provider.js";
 import { TokenService } from "./infrastructure/token.service.js";
-import { RolesGuard } from "../../common/guards/roles.guard.js";
 
 @Module({
   imports: [PlatformModule, StorageModule],
@@ -36,6 +37,7 @@ import { RolesGuard } from "../../common/guards/roles.guard.js";
     RefreshTokenService,
     LogoutService,
     GetMeService,
+    AdminUsersService,
     LoginService,
     UpdateProfileService,
     VerifyAccessTokenService,

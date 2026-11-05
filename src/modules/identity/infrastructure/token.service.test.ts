@@ -1,6 +1,5 @@
-import { beforeAll, describe, expect, it } from "bun:test";
-
 import { ERROR_CODES } from "@eventis/contracts";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { SignJWT } from "jose";
 
 import { SystemClock } from "../../../common/clock.js";

@@ -42,6 +42,10 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(app.get(PinoLogger));
   app.useGlobalFilters(new AllExceptionsFilter());
+  const env = app.get<Env>(ENV);
+  if (env.NODE_ENV === "development") {
+    app.enableCors({ origin: true, methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] });
+  }
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
   app.setGlobalPrefix("api", { exclude: ["healthz", "readyz"] });
 
@@ -65,7 +69,6 @@ async function bootstrap(): Promise<void> {
 
   app.enableShutdownHooks();
 
-  const env = app.get<Env>(ENV);
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
   new Logger("bootstrap").log(

@@ -115,7 +115,7 @@ export class UserRepository {
     return toUserDomain(row);
   }
 
-  async setStatus(userId: string, status: "ACTIVE" | "INACTIVE"): Promise<User> {
+  async setStatus(userId: string, status: "ACTIVE" | "INACTIVE", revokedAt: Date): Promise<User> {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.user.update({
         where: { id: userId },
@@ -124,7 +124,7 @@ export class UserRepository {
       if (status === "INACTIVE") {
         await tx.refreshSession.updateMany({
           where: { userId, revokedAt: null },
-          data: { revokedAt: new Date() },
+          data: { revokedAt },
         });
       }
       return toUserDomain(row);

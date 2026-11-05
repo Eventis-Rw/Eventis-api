@@ -1,6 +1,8 @@
 {
   "extends": "@eventis/tsconfig/nest.json",
   "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "noEmit": true,
     "types": ["bun-types", "node"]
   },
