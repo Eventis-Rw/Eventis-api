@@ -6,6 +6,9 @@ import { PrismaService } from "../../../infrastructure/database/prisma.service.j
 const withOwnerAndViews = { user: true, _count: { select: { views: true } } } satisfies Prisma.StatusInclude;
 export type StatusRecord = Prisma.StatusGetPayload<{ include: typeof withOwnerAndViews }>;
 
+const withViewer = { viewer: true } satisfies Prisma.StatusViewInclude;
+export type StatusViewerRecord = Prisma.StatusViewGetPayload<{ include: typeof withViewer }>;
+
 @Injectable()
 export class StatusRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -52,5 +55,13 @@ export class StatusRepository {
 
   countViews(statusId: string): Promise<number> {
     return this.prisma.statusView.count({ where: { statusId } });
+  }
+
+  listViewers(statusId: string): Promise<StatusViewerRecord[]> {
+    return this.prisma.statusView.findMany({
+      where: { statusId },
+      include: withViewer,
+      orderBy: { viewedAt: "desc" },
+    });
   }
 }

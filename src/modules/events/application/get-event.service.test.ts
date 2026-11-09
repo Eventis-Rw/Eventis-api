@@ -34,6 +34,7 @@ const sample: Event = {
   time: "18:00",
   status: "draft",
   viewsCount: 0,
+  savesCount: 0,
   posterId: ownerId,
   createdAt: new Date("2026-09-01T10:00:00.000Z"),
   updatedAt: new Date("2026-09-01T10:00:00.000Z"),

@@ -1,8 +1,16 @@
 import { Injectable } from "@nestjs/common";
-import { type Event as PrismaEvent, type Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import type { Event, EventStatus } from "../domain/event.js";
+
+type EventWithSaves = Prisma.EventGetPayload<{
+  include: { _count: { select: { savedBy: true } } };
+}>;
+
+const eventWithSaves = {
+  _count: { select: { savedBy: true } },
+} satisfies Prisma.EventInclude;
 
 
 @Injectable()
@@ -40,12 +48,16 @@ export class EventRepository {
         ...input,
         viewsCount: 0,
       },
+      include: eventWithSaves,
     });
     return toDomain(row);
   }
 
   async findById(eventId: string): Promise<Event | null> {
-    const row = await this.prisma.event.findUnique({ where: { eventId } });
+    const row = await this.prisma.event.findUnique({
+      where: { eventId },
+      include: eventWithSaves,
+    });
     return row ? toDomain(row) : null;
   }
 
@@ -80,6 +92,7 @@ export class EventRepository {
         orderBy: [{ startDate: "asc" }, { createdAt: "desc" }],
         skip,
         take: params.limit,
+        include: eventWithSaves,
       }),
       this.prisma.event.count({ where }),
     ]);
@@ -118,6 +131,7 @@ export class EventRepository {
     const row = await this.prisma.event.update({
       where: { eventId },
       data: input,
+      include: eventWithSaves,
     });
     return toDomain(row);
   }
@@ -131,12 +145,13 @@ export class EventRepository {
     const row = await this.prisma.event.update({
       where: { eventId },
       data: { viewsCount: { increment: 1 } },
+      include: eventWithSaves,
     });
     return toDomain(row);
   }
 }
 
-function toDomain(row: PrismaEvent): Event {
+function toDomain(row: EventWithSaves): Event {
   return {
     eventId: row.eventId,
     title: row.title,
@@ -163,6 +178,7 @@ function toDomain(row: PrismaEvent): Event {
     tags: row.tags,
     organisationId: row.organisationId,
     viewsCount: row.viewsCount,
+    savesCount: row._count.savedBy,
     ratingAvg: Number(row.ratingAvg),
     reviewCount: row.reviewCount,
     posterId: row.posterId,

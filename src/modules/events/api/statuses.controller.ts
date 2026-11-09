@@ -100,6 +100,17 @@ export class StatusesController {
     return this.statuses.byId(parseId(id));
   }
 
+  @Get(":id/views")
+  viewers(
+    @Param("id") id: string,
+    @CurrentUser() currentUser?: AuthenticatedUser,
+  ) {
+    return this.statuses.viewers(
+      parseId(id),
+      requireUser(currentUser).userId,
+    );
+  }
+
   @Post(":id/views")
   recordView(
     @Param("id") id: string,

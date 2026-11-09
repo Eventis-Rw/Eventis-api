@@ -36,6 +36,7 @@ const base: Event = {
   time: "18:00",
   status: "draft",
   viewsCount: 0,
+  savesCount: 0,
   posterId: "00000000-0000-4000-8000-000000000002",
   createdAt: new Date("2026-09-01T10:00:00.000Z"),
   updatedAt: new Date("2026-09-01T10:00:00.000Z"),

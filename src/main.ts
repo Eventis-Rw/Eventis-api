@@ -58,6 +58,15 @@ async function bootstrap(): Promise<void> {
   await app.register(import("@fastify/helmet"), {
     contentSecurityPolicy: false,
   });
+  const corsOrigins = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  await app.register(import("@fastify/cors"), {
+    origin: corsOrigins.length > 0 ? corsOrigins : process.env.NODE_ENV !== "production",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", REQUEST_ID_HEADER],
+  });
   await app.register(import("@fastify/multipart"), {
     limits: {
       fileSize: 15 * 1024 * 1024,

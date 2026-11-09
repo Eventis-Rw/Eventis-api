@@ -39,6 +39,7 @@ export interface Event {
   readonly tags: string[];
   readonly organisationId: string | null;
   readonly viewsCount: number;
+  readonly savesCount: number;
   readonly ratingAvg: number;
   readonly reviewCount: number;
   readonly posterId: string;
@@ -188,6 +189,7 @@ export function createEvent(
     tags: props.tags ?? [],
     organisationId: props.organisationId ?? null,
     viewsCount: 0,
+    savesCount: 0,
     ratingAvg: 0,
     reviewCount: 0,
     posterId: props.posterId,

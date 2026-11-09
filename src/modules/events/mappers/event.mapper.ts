@@ -27,6 +27,7 @@ export interface EventResponse {
   tags: string[];
   organisation_id: string | null;
   views_count: number;
+  saves_count: number;
   rating_avg: number;
   review_count: number;
   poster_id: string;
@@ -68,6 +69,7 @@ export function toEventResponse(event: Event, coverUrl?: string | null): EventRe
     tags: event.tags,
     organisation_id: event.organisationId,
     views_count: event.viewsCount,
+    saves_count: event.savesCount,
     rating_avg: event.ratingAvg,
     review_count: event.reviewCount,
     poster_id: event.posterId,

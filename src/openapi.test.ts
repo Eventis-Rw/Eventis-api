@@ -82,6 +82,20 @@ describe("openapi contract", () => {
     expect(paths["/api/v1/events/{id}/share"]?.get).toBeDefined();
   });
 
+  it("documents status viewer tracking for owners", () => {
+    expect(paths["/api/v1/statuses/{id}/views"]?.get).toBeDefined();
+    expect(paths["/api/v1/statuses/{id}/views"]?.get?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(
+      paths["/api/v1/statuses/{id}/views"]?.get?.responses?.["200"],
+    ).toBeDefined();
+    expect(paths["/api/v1/statuses/{id}/views"]?.post).toBeDefined();
+    expect(paths["/api/v1/statuses/{id}/views"]?.post?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+  });
+
   it("documents useful event failure codes and the field-error shape", () => {
     const createResponses = paths["/api/v1/events"]?.post?.responses;
     expect(createResponses?.["401"]?.description).toContain("token");

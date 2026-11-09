@@ -71,10 +71,13 @@ export class AnalyticsRepository {
     to: Date;
   }): Promise<{
     totals: Record<AnalyticsEventType, number>;
+    eventViews: number;
+    savedEvents: number;
     byEvent: Array<{
       eventId: string;
       title: string;
       viewsCount: number;
+      saves: number;
       counts: Record<AnalyticsEventType, number>;
     }>;
     daily: Array<{
@@ -90,11 +93,13 @@ export class AnalyticsRepository {
     if (!input.eventIds.length) {
       return {
         totals: emptyCounts(),
+        eventViews: 0,
+        savedEvents: 0,
         byEvent: [],
         daily: [],
       };
     }
-    const [grouped, events, daily] = await Promise.all([
+    const [grouped, events, saves, daily] = await Promise.all([
       this.prisma.analyticsEvent.groupBy({
         by: ["eventId", "type"],
         where: {
@@ -106,6 +111,11 @@ export class AnalyticsRepository {
       this.prisma.event.findMany({
         where: { eventId: { in: input.eventIds } },
         select: { eventId: true, title: true, viewsCount: true },
+      }),
+      this.prisma.savedEvent.groupBy({
+        by: ["eventId"],
+        where: { eventId: { in: input.eventIds } },
+        _count: { _all: true },
       }),
       this.prisma.eventStatDaily.findMany({
         where: {
@@ -122,16 +132,26 @@ export class AnalyticsRepository {
         eventId: string;
         title: string;
         viewsCount: number;
+        saves: number;
         counts: Record<AnalyticsEventType, number>;
       }
     >();
+    let eventViews = 0;
     for (const event of events) {
+      eventViews += event.viewsCount;
       byEventMap.set(event.eventId, {
         eventId: event.eventId,
         title: event.title,
         viewsCount: event.viewsCount,
+        saves: 0,
         counts: emptyCounts(),
       });
+    }
+    let savedEvents = 0;
+    for (const row of saves) {
+      savedEvents += row._count._all;
+      const event = byEventMap.get(row.eventId);
+      if (event) event.saves = row._count._all;
     }
     for (const row of grouped) {
       totals[row.type] += row._count._all;
@@ -173,6 +193,8 @@ export class AnalyticsRepository {
 
     return {
       totals,
+      eventViews,
+      savedEvents,
       byEvent: [...byEventMap.values()].sort(
         (a, b) =>
           b.counts.VIEW + b.counts.IMPRESSION - (a.counts.VIEW + a.counts.IMPRESSION),
