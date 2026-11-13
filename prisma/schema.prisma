@@ -212,6 +212,12 @@ model User {
   loveProfile                   LoveProfile?
   contactAliases                ContactAlias[]              @relation("ContactAliases")
   contactAliasTargets           ContactAlias[]              @relation("ContactAliasTarget")
+  eventInstallmentAgreements    EventInstallmentAgreement[] @relation("EventInstallmentCustomer")
+  eventInstallmentPayments      EventInstallmentPayment[]    @relation("EventInstallmentPayer")
+  eventInstallmentNotifications EventInstallmentNotification[]
+  eventInstallmentAuditLogs     EventInstallmentAuditLog[]   @relation("EventInstallmentAuditActor")
+  eventInstallmentRefundsProcessed EventInstallmentRefund[]  @relation("EventInstallmentRefundProcessor")
+  eventInstallmentLateFeeWaivers    EventInstallmentLateFee[] @relation("EventInstallmentLateFeeWaiver")
 
   @@index([lastSeenAt], map: "users_last_seen_idx")
   @@map("users")
@@ -312,6 +318,7 @@ model Event {
   promotions      Promotion[]
   analyticsEvents AnalyticsEvent[]
   dailyStats      EventStatDaily[]
+  installmentAgreements EventInstallmentAgreement[] @relation("EventInstallmentAgreements")
 
   @@index([status, startDate], map: "events_status_start_idx")
   @@index([posterId], map: "events_poster_idx")
@@ -667,6 +674,7 @@ enum PaymentPurpose {
   FINDLOVE
   ORGANISER_PLAN
   PROMOTION
+  EVENT_INSTALLMENT
 
   @@map("payment_purpose")
 }
@@ -719,6 +727,7 @@ model PaymentIntent {
   organiserSubscription OrganiserSubscription?
   promotion             Promotion?
   providerEvents        ProviderWebhookEvent[]
+  eventInstallmentPayment EventInstallmentPayment?
 
   @@unique([userId, idempotencyKey], map: "payment_intents_user_idempotency_unique")
   @@index([userId, createdAt], map: "payment_intents_user_created_idx")
@@ -1516,4 +1525,318 @@ model ContactAlias {
   @@id([ownerId, phone], map: "contact_aliases_pkey")
   @@index([ownerId, firstName], map: "contact_aliases_owner_name_idx")
   @@map("contact_aliases")
+}
+
+// ---------- Event installments ----------
+//
+// Separate business domain from FindLove installments. An agreement is assigned by
+// an admin to a customer for an event, snapshots the plan terms at assignment time,
+// and is paid through ordinary PaymentIntents (purpose EVENT_INSTALLMENT).
+
+enum EventInstallmentFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+
+  @@map("event_installment_frequency")
+}
+
+enum EventInstallmentInitialPaymentType {
+  FIXED
+  PERCENT
+
+  @@map("event_installment_initial_payment_type")
+}
+
+enum EventInstallmentLateFeeType {
+  FIXED
+  PERCENT
+
+  @@map("event_installment_late_fee_type")
+}
+
+enum EventInstallmentLateFeeStatus {
+  APPLIED
+  WAIVED
+
+  @@map("event_installment_late_fee_status")
+}
+
+enum EventInstallmentAgreementStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  OVERDUE
+  CANCELLED
+  SUSPENDED
+
+  @@map("event_installment_agreement_status")
+}
+
+enum EventInstallmentScheduleStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  WAIVED
+  CANCELLED
+
+  @@map("event_installment_schedule_status")
+}
+
+enum EventInstallmentPaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@map("event_installment_payment_status")
+}
+
+enum EventInstallmentPaymentSource {
+  PROVIDER
+  MANUAL
+
+  @@map("event_installment_payment_source")
+}
+
+enum EventInstallmentRefundStatus {
+  REQUESTED
+  COMPLETED
+  REJECTED
+
+  @@map("event_installment_refund_status")
+}
+
+enum EventInstallmentNotificationChannel {
+  SMS
+  EMAIL
+
+  @@map("event_installment_notification_channel")
+}
+
+enum EventInstallmentNotificationStatus {
+  PENDING
+  SENT
+  FAILED
+
+  @@map("event_installment_notification_status")
+}
+
+enum EventInstallmentNotificationType {
+  PAYMENT_CONFIRMED
+  PAYMENT_FAILED
+  UPCOMING_REMINDER
+  DUE_REMINDER
+  OVERDUE_NOTICE
+  LATE_FEE_APPLIED
+  REFUND_COMPLETED
+  AGREEMENT_COMPLETED
+
+  @@map("event_installment_notification_type")
+}
+
+model EventInstallmentPlan {
+  id                  String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String                               @db.VarChar(120)
+  description         String?                              @db.Text
+  frequency           EventInstallmentFrequency
+  intervalCount       Int                                  @default(1) @map("interval_count") @db.SmallInt
+  installmentCount    Int                                  @map("installment_count") @db.SmallInt
+  initialPaymentType  EventInstallmentInitialPaymentType   @default(FIXED) @map("initial_payment_type")
+  initialPaymentValue BigInt                                @default(0) @map("initial_payment_value")
+  interestRateBps     Int                                  @default(0) @map("interest_rate_bps") @db.SmallInt
+  lateFeeType         EventInstallmentLateFeeType           @default(FIXED) @map("late_fee_type")
+  lateFeeValue        BigInt                                @default(0) @map("late_fee_value")
+  gracePeriodDays     Int                                  @default(0) @map("grace_period_days") @db.SmallInt
+  allowPartialPayment Boolean                              @default(true) @map("allow_partial_payment")
+  allowEarlyPayment   Boolean                              @default(true) @map("allow_early_payment")
+  currency            String                               @default("RWF") @db.Char(3)
+  isActive            Boolean                              @default(true) @map("is_active")
+  createdAt           DateTime                             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agreements EventInstallmentAgreement[]
+
+  @@index([isActive], map: "event_installment_plans_active_idx")
+  @@map("event_installment_plans")
+}
+
+model EventInstallmentAgreement {
+  id                      String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId              String                          @map("customer_id") @db.Uuid
+  eventId                 String                          @map("event_id") @db.Uuid
+  planId                  String?                         @map("plan_id") @db.Uuid
+  totalAmountMinor        BigInt                          @map("total_amount_minor")
+  initialPaymentMinor     BigInt                          @map("initial_payment_minor")
+  interestAmountMinor     BigInt                          @map("interest_amount_minor")
+  totalPayableMinor       BigInt                          @map("total_payable_minor")
+  amountPaidMinor         BigInt                          @default(0) @map("amount_paid_minor")
+  refundedAmountMinor     BigInt                          @default(0) @map("refunded_amount_minor")
+  lateFeesTotalMinor      BigInt                          @default(0) @map("late_fees_total_minor")
+  outstandingBalanceMinor BigInt                          @map("outstanding_balance_minor")
+  currency                String                          @default("RWF") @db.Char(3)
+  frequency               EventInstallmentFrequency
+  intervalCount           Int                             @default(1) @map("interval_count") @db.SmallInt
+  installmentCount        Int                             @map("installment_count") @db.SmallInt
+  gracePeriodDays         Int                             @default(0) @map("grace_period_days") @db.SmallInt
+  lateFeeType             EventInstallmentLateFeeType     @default(FIXED) @map("late_fee_type")
+  lateFeeValue            BigInt                          @default(0) @map("late_fee_value")
+  allowPartialPayment     Boolean                         @default(true) @map("allow_partial_payment")
+  allowEarlyPayment       Boolean                         @default(true) @map("allow_early_payment")
+  startDate               DateTime                        @map("start_date") @db.Timestamptz(6)
+  status                  EventInstallmentAgreementStatus @default(DRAFT)
+  createdAt               DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer     User                       @relation("EventInstallmentCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  event        Event                      @relation("EventInstallmentAgreements", fields: [eventId], references: [eventId], onDelete: Restrict)
+  plan         EventInstallmentPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
+  schedules    EventInstallmentSchedule[]
+  payments     EventInstallmentPayment[]
+  lateFees     EventInstallmentLateFee[]
+  notifications EventInstallmentNotification[]
+
+  @@index([customerId, status], map: "event_installment_agreements_customer_idx")
+  @@index([eventId, status], map: "event_installment_agreements_event_idx")
+  @@index([status, updatedAt], map: "event_installment_agreements_status_idx")
+  @@map("event_installment_agreements")
+}
+
+model EventInstallmentSchedule {
+  id                     String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agreementId            String                            @map("agreement_id") @db.Uuid
+  installmentNumber      Int                                @map("installment_number") @db.SmallInt
+  isInitialPayment       Boolean                            @default(false) @map("is_initial_payment")
+  dueDate                DateTime                          @map("due_date") @db.Timestamptz(6)
+  principalAmountMinor   BigInt                            @map("principal_amount_minor")
+  interestAmountMinor    BigInt                            @map("interest_amount_minor")
+  lateFeeAmountMinor     BigInt                            @default(0) @map("late_fee_amount_minor")
+  amountDueMinor         BigInt                            @map("amount_due_minor")
+  amountPaidMinor        BigInt                            @default(0) @map("amount_paid_minor")
+  refundedAmountMinor    BigInt                            @default(0) @map("refunded_amount_minor")
+  outstandingAmountMinor BigInt                            @map("outstanding_amount_minor")
+  status                 EventInstallmentScheduleStatus    @default(PENDING)
+  createdAt              DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agreement EventInstallmentAgreement    @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  payments  EventInstallmentPayment[]
+  lateFees  EventInstallmentLateFee[]
+  notifications EventInstallmentNotification[]
+
+  @@unique([agreementId, installmentNumber], map: "event_installment_schedules_agreement_number_unique")
+  @@index([dueDate, status], map: "event_installment_schedules_due_status_idx")
+  @@map("event_installment_schedules")
+}
+
+model EventInstallmentPayment {
+  id                   String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agreementId          String                           @map("agreement_id") @db.Uuid
+  scheduleId           String                           @map("schedule_id") @db.Uuid
+  customerId           String                           @map("customer_id") @db.Uuid
+  paymentIntentId      String?                          @unique @map("payment_intent_id") @db.Uuid
+  source               EventInstallmentPaymentSource    @default(PROVIDER)
+  amountMinor          BigInt                           @map("amount_minor")
+  refundedAmountMinor  BigInt                           @default(0) @map("refunded_amount_minor")
+  currency             String                           @default("RWF") @db.Char(3)
+  paymentMethod        PaymentMethod?
+  transactionReference String?                          @map("transaction_reference") @db.VarChar(128)
+  status               EventInstallmentPaymentStatus    @default(PENDING)
+  paidAt               DateTime?                        @map("paid_at") @db.Timestamptz(6)
+  createdAt            DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agreement     EventInstallmentAgreement @relation(fields: [agreementId], references: [id], onDelete: Restrict)
+  schedule      EventInstallmentSchedule  @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  customer      User                      @relation("EventInstallmentPayer", fields: [customerId], references: [id], onDelete: Restrict)
+  paymentIntent PaymentIntent?            @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  refunds       EventInstallmentRefund[]
+
+  @@index([agreementId, createdAt], map: "event_installment_payments_agreement_idx")
+  @@index([scheduleId, status], map: "event_installment_payments_schedule_idx")
+  @@index([customerId, createdAt], map: "event_installment_payments_customer_idx")
+  @@index([status, createdAt], map: "event_installment_payments_status_idx")
+  @@map("event_installment_payments")
+}
+
+model EventInstallmentRefund {
+  id                      String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installmentPaymentId    String                        @map("installment_payment_id") @db.Uuid
+  amountMinor             BigInt                        @map("amount_minor")
+  reason                  String                        @db.VarChar(500)
+  status                  EventInstallmentRefundStatus @default(REQUESTED)
+  providerRefundReference String?                       @map("provider_refund_reference") @db.VarChar(128)
+  rejectionReason         String?                       @map("rejection_reason") @db.VarChar(500)
+  processedBy             String?                       @map("processed_by") @db.Uuid
+  processedAt             DateTime?                     @map("processed_at") @db.Timestamptz(6)
+  createdAt               DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment   EventInstallmentPayment @relation(fields: [installmentPaymentId], references: [id], onDelete: Restrict)
+  processor User?                  @relation("EventInstallmentRefundProcessor", fields: [processedBy], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt], map: "event_installment_refunds_status_idx")
+  @@map("event_installment_refunds")
+}
+
+model EventInstallmentLateFee {
+  id          String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agreementId String                         @map("agreement_id") @db.Uuid
+  scheduleId  String                         @map("schedule_id") @db.Uuid
+  feeType     EventInstallmentLateFeeType
+  amountMinor BigInt                         @map("amount_minor")
+  reason      String                         @db.VarChar(500)
+  status      EventInstallmentLateFeeStatus  @default(APPLIED)
+  appliedAt   DateTime                       @default(now()) @map("applied_at") @db.Timestamptz(6)
+  waivedAt    DateTime?                      @map("waived_at") @db.Timestamptz(6)
+  waivedBy    String?                        @map("waived_by") @db.Uuid
+  createdAt   DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  agreement EventInstallmentAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  schedule  EventInstallmentSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  waiver    User?                       @relation("EventInstallmentLateFeeWaiver", fields: [waivedBy], references: [id], onDelete: SetNull)
+
+  @@unique([scheduleId, feeType], map: "event_installment_late_fees_schedule_type_unique")
+  @@index([agreementId, status], map: "event_installment_late_fees_agreement_idx")
+  @@map("event_installment_late_fees")
+}
+
+model EventInstallmentNotification {
+  id               String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId       String                              @map("customer_id") @db.Uuid
+  agreementId      String?                             @map("agreement_id") @db.Uuid
+  scheduleId       String?                             @map("schedule_id") @db.Uuid
+  notificationType EventInstallmentNotificationType    @map("notification_type")
+  channels          EventInstallmentNotificationChannel[]
+  status           EventInstallmentNotificationStatus  @default(PENDING)
+  sentAt           DateTime?                           @map("sent_at") @db.Timestamptz(6)
+  createdAt        DateTime                            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  customer  User                        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  agreement EventInstallmentAgreement?  @relation(fields: [agreementId], references: [id], onDelete: SetNull)
+  schedule  EventInstallmentSchedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, status, createdAt], map: "event_installment_notifications_customer_idx")
+  @@index([agreementId, createdAt], map: "event_installment_notifications_agreement_idx")
+  @@map("event_installment_notifications")
+}
+
+model EventInstallmentAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId        String?  @map("actor_id") @db.Uuid
+  action         String   @db.VarChar(80)
+  entityType     String   @map("entity_type") @db.VarChar(60)
+  entityId       String   @db.Uuid
+  previousValues Json?    @map("previous_values")
+  newValues      Json
+  reason         String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation("EventInstallmentAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt], map: "event_installment_audit_logs_entity_idx")
+  @@index([actorId, createdAt], map: "event_installment_audit_logs_actor_idx")
+  @@map("event_installment_audit_logs")
 }

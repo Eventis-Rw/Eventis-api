@@ -19,6 +19,7 @@ import {
   type PaymentIntent,
   type PaymentIntentWithPlan,
   type PaymentMethod,
+  type PaymentPurposeCode,
   type PaymentStatus,
   type ServiceSubscription,
 } from "../domain/payment.js";
@@ -148,6 +149,7 @@ export class PaymentRepository {
       data: {
         reference: input.reference,
         userId: input.userId,
+        purpose: "FINDLOVE",
         installmentPlanId: input.installmentPlanId,
         accountType: input.accountType,
         amountMinor: input.amountMinor,
@@ -166,6 +168,67 @@ export class PaymentRepository {
   async findPaymentById(id: string): Promise<PaymentIntentWithPlan | null> {
     const row = await this.prisma.paymentIntent.findUnique({
       where: { id },
+      include: { installmentPlan: true },
+    });
+    return row ? toPaymentWithPlanDomain(row) : null;
+  }
+
+  /**
+   * Creates a PaymentIntent for a purpose other than FINDLOVE. The intent is
+   * not tied to a FindLove installment plan; the owning business module is
+   * recorded through `purpose` + `referenceId`.
+   */
+  async createCollectionIntent(input: {
+    reference: string;
+    userId: string;
+    purpose: PaymentPurposeCode;
+    referenceId: string | null;
+    amountMinor: bigint;
+    currency: string;
+    paymentMethod: PaymentMethod;
+    phoneNumber: string;
+    provider: string;
+    idempotencyKey: string | null;
+    expiresAt: Date;
+  }): Promise<PaymentIntentWithPlan> {
+    const row = await this.prisma.paymentIntent.create({
+      data: {
+        reference: input.reference,
+        userId: input.userId,
+        purpose: input.purpose,
+        referenceId: input.referenceId,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
+        paymentMethod: input.paymentMethod,
+        phoneNumber: input.phoneNumber,
+        provider: input.provider,
+        idempotencyKey: input.idempotencyKey,
+        expiresAt: input.expiresAt,
+      },
+      include: { installmentPlan: true },
+    });
+    return toPaymentWithPlanDomain(row);
+  }
+
+  async findReusablePendingCollection(input: {
+    userId: string;
+    purpose: PaymentPurposeCode;
+    referenceId: string;
+    paymentMethod: PaymentMethod;
+    since: Date;
+    now: Date;
+  }): Promise<PaymentIntentWithPlan | null> {
+    const row = await this.prisma.paymentIntent.findFirst({
+      where: {
+        userId: input.userId,
+        purpose: input.purpose,
+        referenceId: input.referenceId,
+        paymentMethod: input.paymentMethod,
+        status: { in: [...PENDING_PAYMENT_STATUSES] },
+        createdAt: { gte: input.since },
+        expiresAt: { gt: input.now },
+      },
+      orderBy: { createdAt: "desc" },
       include: { installmentPlan: true },
     });
     return row ? toPaymentWithPlanDomain(row) : null;
@@ -438,6 +501,8 @@ function toPaymentDomain(row: PrismaPaymentIntent): PaymentIntent {
     id: row.id,
     reference: row.reference,
     userId: row.userId,
+    purpose: row.purpose,
+    referenceId: row.referenceId,
     installmentPlanId: row.installmentPlanId,
     accountType: row.accountType,
     amountMinor: row.amountMinor,
@@ -458,12 +523,11 @@ function toPaymentDomain(row: PrismaPaymentIntent): PaymentIntent {
 }
 
 function toPaymentWithPlanDomain(row: PaymentWithPlan): PaymentIntentWithPlan {
-  if (!row.installmentPlan) {
-    throw new Error("Payment intent is missing an installment plan");
-  }
   return {
     ...toPaymentDomain(row),
-    plan: toInstallmentPlanDomain(row.installmentPlan),
+    plan: row.installmentPlan
+      ? toInstallmentPlanDomain(row.installmentPlan)
+      : null,
   };
 }
 

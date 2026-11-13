@@ -482,6 +482,10 @@ export class OrganisationRepository {
           },
         });
       }
+      await tx.user.update({
+        where: { id: existing.userId },
+        data: { accountType: "POSTER" },
+      });
       return row;
     });
   }

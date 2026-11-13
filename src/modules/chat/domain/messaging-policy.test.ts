@@ -131,6 +131,19 @@ describe("messaging policies", () => {
     ).toEqual({ allowed: false, code: "BLOCKED" });
   });
 
+  it("allows open Eventis chat without an event association", async () => {
+    expect(
+      await messagingPolicies.EVENTIS.canStart(
+        startCtx({ service: "EVENTIS", contextId: "event-id", event: null }),
+      ),
+    ).toEqual(ALLOWED);
+    expect(
+      await messagingPolicies.EVENTIS.canSend(
+        sendCtx({ service: "EVENTIS", contextId: "event-id", event: null }),
+      ),
+    ).toEqual(ALLOWED);
+  });
+
   it("keeps Eventis access independent from FindLove subscriptions", async () => {
     const policy = createEventisPolicy({
       canInitiate: ["ORGANIZER"],

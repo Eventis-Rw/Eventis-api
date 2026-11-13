@@ -20,6 +20,7 @@ import { AppError } from "../../../common/errors/app-error.js";
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
 import { CurrentUserId, JwtAuthGuard } from "../../identity/index.js";
 import { ChatService } from "../application/chat.service.js";
+import { CONTACT_SYNC_MAX } from "../domain/chat.js";
 
 interface ChatUploadedFile {
   fieldname: string;
@@ -27,7 +28,22 @@ interface ChatUploadedFile {
   encoding: string;
   mimetype: string;
   data: Buffer;
+  content?: string | undefined;
+  replyToId?: string | undefined;
+  clientMessageId?: string | undefined;
+  durationMs?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
 }
+
+const attachmentFieldsSchema = z.object({
+  content: z.string().trim().max(4000).optional(),
+  replyToId: z.string().uuid().optional(),
+  clientMessageId: z.string().trim().min(1).max(80).optional(),
+  durationMs: z.coerce.number().int().min(0).optional(),
+  width: z.coerce.number().int().min(1).optional(),
+  height: z.coerce.number().int().min(1).optional(),
+});
 
 const idSchema = z.string().uuid();
 const pageSchema = z.object({
@@ -42,7 +58,7 @@ const contactSchema = z.object({
         phoneNumber: z.string().trim().min(1).max(40),
       }),
     )
-    .max(200),
+    .max(CONTACT_SYNC_MAX),
 });
 const serviceSchema = z.enum(["FINDLOVE", "EVENTIS"]);
 const createConversationSchema = z.object({
@@ -83,6 +99,12 @@ const deliveredSchema = z.object({
 const invitationSchema = z.object({
   phoneNumber: z.string().trim().min(1).max(40),
   service: serviceSchema.optional(),
+});
+const updateAliasSchema = z.object({
+  phoneNumber: z.string().trim().min(1).max(40),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().max(100).optional(),
+  newPhoneNumber: z.string().trim().min(1).max(40).optional(),
 });
 const blockSchema = z.object({
   userId: z.string().uuid(),
@@ -143,6 +165,15 @@ export class ChatController {
   @Get("contacts/aliases")
   listContactAliases(@CurrentUserId() userId: string) {
     return this.chat.listContactAliases(userId);
+  }
+
+  @Patch("contacts/aliases")
+  updateContactAlias(
+    @CurrentUserId() userId: string,
+    @Body(zodPipe(updateAliasSchema))
+    body: z.infer<typeof updateAliasSchema>,
+  ) {
+    return this.chat.updateContactAlias(userId, body);
   }
 
   @Get("conversations")
@@ -339,6 +370,11 @@ export class ChatController {
     return this.chat.listCalls(userId, query);
   }
 
+  @Get("blocks")
+  listBlocks(@CurrentUserId() userId: string) {
+    return this.chat.listBlockedUsers(userId);
+  }
+
   @Post("blocks")
   @HttpCode(200)
   blockUser(
@@ -346,6 +382,15 @@ export class ChatController {
     @Body(zodPipe(blockSchema)) body: z.infer<typeof blockSchema>,
   ) {
     return this.chat.blockUser(userId, body.userId);
+  }
+
+  @Delete("blocks/:id")
+  @HttpCode(200)
+  unblockUser(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.unblockUser(userId, id);
   }
 
   @Post("reports")
@@ -374,6 +419,7 @@ async function parseAttachment(req: FastifyRequest): Promise<ChatUploadedFile> {
     });
   }
   let file: ChatUploadedFile | undefined;
+  const fields: Record<string, string> = {};
   try {
     for await (const part of req.parts()) {
       if (part.type === "file") {
@@ -389,9 +435,16 @@ async function parseAttachment(req: FastifyRequest): Promise<ChatUploadedFile> {
           mimetype: part.mimetype,
           data: await part.toBuffer(),
         };
-      } else if (part.value) {
+      } else if (typeof part.value === "string") {
+        if (!(part.fieldname in attachmentFieldsSchema.shape)) {
+          throw AppError.validation({
+            file: ["Only the file field and message details are accepted"],
+          });
+        }
+        fields[part.fieldname] = part.value;
+      } else {
         throw AppError.validation({
-          file: ["Only the file field is accepted"],
+          file: ["Only the file field and message details are accepted"],
         });
       }
     }
@@ -412,5 +465,11 @@ async function parseAttachment(req: FastifyRequest): Promise<ChatUploadedFile> {
   }
   if (!file)
     throw AppError.validation({ file: ["An attachment file is required"] });
-  return file;
+  const details = attachmentFieldsSchema.safeParse(fields);
+  if (!details.success) {
+    throw AppError.validation({
+      message: details.error.issues.map((issue) => issue.message),
+    });
+  }
+  return { ...file, ...details.data };
 }

@@ -539,7 +539,14 @@ export class ChatService {
   async addAttachment(
     userId: string,
     conversationId: string,
-    file: UploadedFile,
+    file: UploadedFile & {
+      content?: string | undefined;
+      replyToId?: string | undefined;
+      clientMessageId?: string | undefined;
+      durationMs?: number | undefined;
+      width?: number | undefined;
+      height?: number | undefined;
+    },
   ) {
     this.rateLimiter.consume(
       `message:${userId}`,
@@ -549,6 +556,33 @@ export class ChatService {
     );
     const conversation = await this.requireConversation(userId, conversationId);
     const sendFacts = await this.assertCanSend(userId, conversation);
+    if (file.replyToId) {
+      const reply = await this.chat.findMessageById(file.replyToId);
+      if (
+        !reply ||
+        reply.conversationId !== conversationId ||
+        reply.deletedAt
+      ) {
+        throw AppError.validation({
+          replyToId: ["Reply target is unavailable in this conversation"],
+        });
+      }
+    }
+    if (file.clientMessageId) {
+      const existing = await this.chat.findMessageByClientId(
+        userId,
+        file.clientMessageId,
+      );
+      if (existing) {
+        if (existing.conversationId !== conversationId) {
+          throw AppError.conflict(
+            ERROR_CODES.VALIDATION_FAILED,
+            "clientMessageId was already used for another conversation",
+          );
+        }
+        return toMessageResponse(existing);
+      }
+    }
     this.storage.validateChatFile(file);
     const type: MessageType = file.mimetype.startsWith("image/")
       ? "IMAGE"
@@ -559,9 +593,9 @@ export class ChatService {
       conversationId,
       senderId: userId,
       type,
-      content: null,
-      replyToId: null,
-      clientMessageId: null,
+      content: file.content?.trim() || null,
+      replyToId: file.replyToId ?? null,
+      clientMessageId: file.clientMessageId ?? null,
       recipientParticipantIds: conversation.participants
         .filter((p) => p.userId !== userId)
         .map((p) => p.id),
@@ -583,6 +617,9 @@ export class ChatService {
         mimeType: file.mimetype,
         sizeBytes: file.data.length,
         storageKey,
+        durationMs: file.durationMs ?? null,
+        width: file.width ?? null,
+        height: file.height ?? null,
       });
       const result = { ...message, attachments: [attachment] };
       this.publishMessage(conversation, result);
@@ -640,6 +677,49 @@ export class ChatService {
         lastName: row.lastName,
         updatedAt: row.updatedAt.toISOString(),
       })),
+    };
+  }
+
+  async updateContactAlias(
+    userId: string,
+    input: {
+      phoneNumber: string;
+      firstName: string;
+      lastName?: string | undefined;
+      newPhoneNumber?: string | undefined;
+    },
+  ) {
+    const phone = normalizeContactPhone(input.phoneNumber);
+    if (!phone) {
+      throw AppError.validation({
+        phoneNumber: ["Enter a valid phone number"],
+      });
+    }
+    const existing = (await this.chat.listContactAliases(userId)).find(
+      (alias) => alias.phone === phone,
+    );
+    if (!existing) throw AppError.notFound("Contact");
+    const nextPhone = input.newPhoneNumber
+      ? normalizeContactPhone(input.newPhoneNumber)
+      : phone;
+    if (!nextPhone) {
+      throw AppError.validation({
+        newPhoneNumber: ["Enter a valid phone number"],
+      });
+    }
+    const [matched] = await this.users.byPhones([nextPhone]);
+    const alias = await this.chat.updateContactAlias(userId, phone, {
+      phone: nextPhone,
+      contactUserId: matched?.id ?? null,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName?.trim() || null,
+    });
+    return {
+      phone: alias.phone,
+      contactUserId: alias.contactUserId,
+      firstName: alias.firstName,
+      lastName: alias.lastName,
+      updatedAt: alias.updatedAt.toISOString(),
     };
   }
 
@@ -1011,6 +1091,19 @@ export class ChatService {
     if (profiles.length !== 1) throw AppError.notFound("User");
     await this.chat.createBlock(userId, blockedId);
     return { blocked: true, userId: blockedId };
+  }
+
+  async unblockUser(userId: string, blockedId: string) {
+    if (userId === blockedId) {
+      throw AppError.validation({ userId: ["You cannot unblock yourself"] });
+    }
+    await this.chat.deleteBlock(userId, blockedId);
+    return { blocked: false, userId: blockedId };
+  }
+
+  async listBlockedUsers(userId: string) {
+    const userIds = await this.chat.listBlockedIds(userId);
+    return { userIds };
   }
 
   async reportUser(

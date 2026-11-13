@@ -28,7 +28,7 @@ import type {
   ReceiptRecord,
   ReceiptStatus,
 } from "../domain/chat.js";
-import { PolicyViolationError } from "../domain/chat.js";
+import { CONTACT_SYNC_MAX, PolicyViolationError } from "../domain/chat.js";
 import type {
   ConnectionFacts,
   EventFacts,
@@ -273,7 +273,41 @@ export class ChatRepository {
     return this.prisma.contactAlias.findMany({
       where: { ownerId },
       orderBy: [{ firstName: "asc" }, { phone: "asc" }],
-      take: 500,
+      take: CONTACT_SYNC_MAX,
+    });
+  }
+
+  async updateContactAlias(
+    ownerId: string,
+    currentPhone: string,
+    input: {
+      phone: string;
+      contactUserId: string | null;
+      firstName: string;
+      lastName: string | null;
+    },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      if (input.phone !== currentPhone) {
+        await tx.contactAlias.delete({
+          where: { ownerId_phone: { ownerId, phone: currentPhone } },
+        });
+      }
+      return tx.contactAlias.upsert({
+        where: { ownerId_phone: { ownerId, phone: input.phone } },
+        create: {
+          ownerId,
+          phone: input.phone,
+          contactUserId: input.contactUserId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+        update: {
+          contactUserId: input.contactUserId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+      });
     });
   }
 
@@ -713,6 +747,22 @@ export class ChatRepository {
       update: {},
       create: { blockerId, blockedId },
     });
+  }
+
+  async deleteBlock(blockerId: string, blockedId: string): Promise<void> {
+    await this.prisma.userBlock.deleteMany({
+      where: { blockerId, blockedId },
+    });
+  }
+
+  async listBlockedIds(blockerId: string): Promise<string[]> {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { blockerId },
+      select: { blockedId: true },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    return rows.map((row) => row.blockedId);
   }
 
   async createReport(input: {

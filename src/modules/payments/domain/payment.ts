@@ -1,3 +1,8 @@
+export type PaymentPurposeCode =
+  | "FINDLOVE"
+  | "ORGANISER_PLAN"
+  | "PROMOTION"
+  | "EVENT_INSTALLMENT";
 export type FindLoveAccountType = "PRIVATE" | "PUBLIC";
 export type InstallmentInterval = "WEEKLY" | "MONTHLY" | "YEARLY";
 export type PaymentMethod = "MTN_MOMO" | "AIRTEL_MONEY";
@@ -32,6 +37,8 @@ export interface PaymentIntent {
   readonly id: string;
   readonly reference: string;
   readonly userId: string;
+  readonly purpose: PaymentPurposeCode;
+  readonly referenceId: string | null;
   readonly installmentPlanId: string | null;
   readonly accountType: FindLoveAccountType | null;
   readonly amountMinor: bigint;
@@ -51,7 +58,12 @@ export interface PaymentIntent {
 }
 
 export interface PaymentIntentWithPlan extends PaymentIntent {
-  readonly plan: InstallmentPlan;
+  /**
+   * The FindLove installment plan backing this intent. Null for any purpose
+   * other than FINDLOVE — event installments and future purposes carry their
+   * own business linkage through `purpose` + `referenceId`.
+   */
+  readonly plan: InstallmentPlan | null;
 }
 
 export interface AdminPaymentIntent extends Omit<

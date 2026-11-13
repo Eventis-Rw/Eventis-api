@@ -10,8 +10,9 @@ import { StorageModule } from "./infrastructure/storage/storage.module.js";
 import { AnalyticsModule } from "./modules/analytics/index.js";
 import { ChatModule } from "./modules/chat/index.js";
 import { EngagementModule } from "./modules/engagement/index.js";
-import { FindLoveModule } from "./modules/findlove/index.js";
+import { EventInstallmentsModule } from "./modules/event-installments/index.js";
 import { EventsModule } from "./modules/events/index.js";
+import { FindLoveModule } from "./modules/findlove/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
 import { OrganisationsModule } from "./modules/organisations/index.js";
 import { PaymentsModule } from "./modules/payments/index.js";
@@ -60,6 +61,7 @@ import { SupportModule } from "./modules/support/index.js";
     PlatformModule,
     IdentityModule,
     EventsModule,
+    EventInstallmentsModule,
     ChatModule,
     PaymentsModule,
     EngagementModule,

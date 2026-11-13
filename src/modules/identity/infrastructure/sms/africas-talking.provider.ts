@@ -24,6 +24,9 @@ function recipientWasRejected(recipient: {
 
 @Injectable()
 export class AfricasTalkingSmsProvider implements SmsProvider {
+  /** Africa's Talking must answer within this window or the request fails fast. */
+  private static readonly REQUEST_TIMEOUT_MS = 10_000;
+
   private readonly logger = new Logger(AfricasTalkingSmsProvider.name);
 
   constructor(@Inject(ENV) private readonly env: Env) {}
@@ -70,10 +73,15 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
           apiKey,
         },
         body,
+        signal: AbortSignal.timeout(
+          AfricasTalkingSmsProvider.REQUEST_TIMEOUT_MS,
+        ),
       });
     } catch (cause) {
+      const timedOut =
+        cause instanceof Error && cause.name === "TimeoutError";
       this.logger.error(
-        { err: cause, to: maskPhone(input.to) },
+        { err: cause, to: maskPhone(input.to), timedOut },
         "Africa's Talking request failed",
       );
       throw new AppError(

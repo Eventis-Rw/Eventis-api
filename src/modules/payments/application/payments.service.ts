@@ -37,7 +37,7 @@ import {
   type PaymentResponse,
 } from "../mappers/payment.mapper.js";
 
-import { PaymentActivationService } from "./payment-activation.service.js";
+import { PaymentCompletionRegistry } from "./payment-completion.registry.js";
 
 export interface InitiatePaymentInput {
   accountType: "private" | "public";
@@ -58,7 +58,7 @@ export interface ListPaymentsInput {
 export class PaymentsService {
   constructor(
     private readonly payments: PaymentRepository,
-    private readonly activation: PaymentActivationService,
+    private readonly completions: PaymentCompletionRegistry,
     private readonly clock: Clock,
     @Inject(PAYMENT_GATEWAY) private readonly provider: PaymentProvider,
   ) {}
@@ -202,7 +202,7 @@ export class PaymentsService {
         providerTransactionId: providerResult.providerTransactionId,
         providerRequestedAt: now,
       });
-      await this.activation.activate(updated, plan, now);
+      await this.completions.dispatchSucceeded(updated, now);
       updated = (await this.payments.findPaymentById(payment.id)) ?? updated;
       return toInitiatePaymentResponse(
         updated,
@@ -254,7 +254,7 @@ export class PaymentsService {
         providerTransactionId:
           result.providerTransactionId ?? payment.providerTransactionId,
       });
-      await this.activation.activate(updated, payment.plan, now);
+      await this.completions.dispatchSucceeded(updated, now);
       updated = (await this.payments.findPaymentById(payment.id)) ?? updated;
       return toPaymentResponse(updated);
     }

@@ -23,9 +23,9 @@ export interface EventisMessagingConfig {
 }
 
 export const EVENTIS_MESSAGING_CONFIG: EventisMessagingConfig = {
-  canInitiate: ["ORGANIZER"],
+  canInitiate: ["ORGANIZER", "ATTENDEE"],
   canReply: ["ORGANIZER", "ATTENDEE"],
-  requireEventAssociation: true,
+  requireEventAssociation: false,
   requireSubscription: false,
   requirePublishingPayment: false,
   allowCreateWhenEventStatus: ["published"],

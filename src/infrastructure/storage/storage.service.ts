@@ -42,6 +42,9 @@ export const ALLOWED_CHAT_MIMES = [
   "audio/wav",
   "audio/x-m4a",
   "audio/m4a",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
 ] as const;
 
 @Injectable()
@@ -155,7 +158,7 @@ export class StorageService {
     if (!ALLOWED_CHAT_MIMES.includes(file.mimetype as (typeof ALLOWED_CHAT_MIMES)[number])) {
       throw AppError.validation({
         [fieldName]: [
-          `Unsupported file type '${file.mimetype}'. Allowed types include images, PDF, text, Word documents, and audio.`,
+          `Unsupported file type '${file.mimetype}'. Allowed types include images, video, PDF, text, Word documents, and audio.`,
         ],
       });
     }
