@@ -1,6 +1,9 @@
 export type UserStatus = "ACTIVE" | "INACTIVE";
 export type UserRole = "CUSTOMER" | "ADMIN";
 export type AccountType = "POSTER" | "CUSTOMER" | "LOVE";
+export type LoveProfileType = "PRIVATE" | "PUBLIC";
+export type PosterKind = "INDIVIDUAL" | "BUSINESS";
+export type ProfileVisibility = "PUBLIC" | "PRIVATE";
 
 export interface User {
   readonly id: string;
@@ -9,6 +12,7 @@ export interface User {
   readonly lastName: string | null;
   readonly email: string | null;
   readonly accountType: AccountType;
+  readonly findLoveProfileType: LoveProfileType;
   readonly role: UserRole;
   readonly organizationName: string | null;
   readonly organizationDescription: string | null;
@@ -20,6 +24,13 @@ export interface User {
   readonly displayName: string | null;
   readonly avatarUrl: string | null;
   readonly pinHash: string | null;
+  readonly username: string | null;
+  readonly posterKind: PosterKind;
+  readonly termsVersion: string | null;
+  readonly termsAcceptedAt: Date | null;
+  readonly profileVisibility: ProfileVisibility;
+  readonly lastSeenAt: Date | null;
+  readonly deletedAt: Date | null;
   readonly status: UserStatus;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -35,7 +46,6 @@ export interface RefreshSession {
   readonly replacedById: string | null;
   readonly createdAt: Date;
 }
-
 
 export function isRefreshReusable(session: RefreshSession, now: Date): boolean {
   if (session.revokedAt !== null) return false;

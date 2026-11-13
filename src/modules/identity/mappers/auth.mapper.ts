@@ -2,6 +2,7 @@ import type { AuthSession, AuthTokens, SessionUser } from "@eventis/contracts";
 
 import type { AccountType, User } from "../domain/user.js";
 
+export type AuthRole = "admin" | "organizer_owner" | "customer";
 
 export function toSessionUser(user: User): SessionUser {
   return {
@@ -9,16 +10,18 @@ export function toSessionUser(user: User): SessionUser {
     phone: user.phone,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
-    roles: [
-      ...(user.role === "ADMIN" ? (["admin"] as const) : []),
-      ...(user.accountType === "POSTER"
-        ? (["organizer_owner"] as const)
-        : (["customer"] as const)),
-    ],
+    roles: toAuthRoles(user),
     createdAt: user.createdAt.toISOString(),
   };
 }
 
+export function toAuthRoles(user: User): AuthRole[] {
+  const roles: AuthRole[] = [];
+  if (user.role === "ADMIN") roles.push("admin");
+  if (user.accountType === "POSTER") roles.push("organizer_owner");
+  if (roles.length === 0) roles.push("customer");
+  return roles;
+}
 
 export function toProfileResponse(user: User) {
   return {
@@ -37,6 +40,11 @@ export function toProfileResponse(user: User) {
     bio: user.bio,
     location: user.location,
     interestedIn: user.interestedIn,
+    username: user.username,
+    posterKind: user.posterKind,
+    termsVersion: user.termsVersion,
+    termsAcceptedAt: user.termsAcceptedAt?.toISOString() ?? null,
+    profileVisibility: user.profileVisibility,
     role: user.role,
     status: user.status,
     createdAt: user.createdAt.toISOString(),

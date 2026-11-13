@@ -70,12 +70,18 @@ export class AuthGuard implements CanActivate {
       throw AppError.unauthenticated("Invalid or expired authentication token");
     }
 
-    const roles = payload.roles ?? (payload.role ? [payload.role] : ["customer"]);
+    const roles = Array.isArray(payload.roles)
+      ? payload.roles.filter((role): role is string => typeof role === "string")
+      : [];
+    const role =
+      typeof payload.role === "string"
+        ? payload.role
+        : (roles[0] ?? "customer");
     request.user = {
       userId,
       ...(payload.phone ? { phone: payload.phone } : {}),
-      role: payload.role ?? roles[0] ?? "customer",
-      roles,
+      role,
+      roles: roles.length ? roles : [role],
     };
 
     return true;

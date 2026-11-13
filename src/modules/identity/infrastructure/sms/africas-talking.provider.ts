@@ -6,8 +6,27 @@ import { ENV, type Env } from "../../../../config/env.js";
 
 import type { SendSmsInput, SmsProvider } from "./sms-provider.js";
 
+function recipientWasRejected(recipient: {
+  statusCode?: number | string;
+  status?: string;
+}): boolean {
+  const statusCode =
+    typeof recipient.statusCode === "number"
+      ? recipient.statusCode
+      : Number(recipient.statusCode);
+
+  return (
+    (Number.isFinite(statusCode) && statusCode >= 400) ||
+    (typeof recipient.status === "string" &&
+      /\b(reject|rejected|fail|failed|error)\b/i.test(recipient.status))
+  );
+}
+
 @Injectable()
 export class AfricasTalkingSmsProvider implements SmsProvider {
+  /** Africa's Talking must answer within this window or the request fails fast. */
+  private static readonly REQUEST_TIMEOUT_MS = 10_000;
+
   private readonly logger = new Logger(AfricasTalkingSmsProvider.name);
 
   constructor(@Inject(ENV) private readonly env: Env) {}
@@ -54,10 +73,15 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
           apiKey,
         },
         body,
+        signal: AbortSignal.timeout(
+          AfricasTalkingSmsProvider.REQUEST_TIMEOUT_MS,
+        ),
       });
     } catch (cause) {
+      const timedOut =
+        cause instanceof Error && cause.name === "TimeoutError";
       this.logger.error(
-        { err: cause, to: maskPhone(input.to) },
+        { err: cause, to: maskPhone(input.to), timedOut },
         "Africa's Talking request failed",
       );
       throw new AppError(
@@ -86,30 +110,35 @@ export class AfricasTalkingSmsProvider implements SmsProvider {
       );
     }
 
-    try {
-      const parsed = JSON.parse(responseText) as {
-        SMSMessageData?: {
-          Recipients?: Array<{ statusCode?: number; status?: string }>;
-        };
+    let parsed: {
+      SMSMessageData?: {
+        Recipients?: Array<{ statusCode?: number | string; status?: string }>;
       };
-      const recipients = parsed.SMSMessageData?.Recipients ?? [];
-      const failed = recipients.filter(
-        (r) => typeof r.statusCode === "number" && r.statusCode >= 400,
+    };
+    try {
+      parsed = JSON.parse(responseText) as typeof parsed;
+    } catch (cause) {
+      throw new AppError(
+        ERROR_CODES.INTERNAL_ERROR,
+        "Unable to send verification code",
+        502,
+        { cause, internal: { provider: "africas_talking" } },
       );
-      if (recipients.length > 0 && failed.length === recipients.length) {
-        this.logger.warn(
-          { to: maskPhone(input.to), status: failed[0]?.status },
-          "Africa's Talking could not deliver SMS",
-        );
-        throw new AppError(
-          ERROR_CODES.INTERNAL_ERROR,
-          "Unable to send verification code",
-          502,
-          { internal: { delivery: failed[0]?.status } },
-        );
-      }
-    } catch (error) {
-      if (error instanceof AppError) throw error;
+    }
+
+    const recipients = parsed.SMSMessageData?.Recipients ?? [];
+    const failed = recipients.find(recipientWasRejected);
+    if (failed) {
+      this.logger.warn(
+        { to: maskPhone(input.to), status: failed.status },
+        "Africa's Talking could not deliver SMS",
+      );
+      throw new AppError(
+        ERROR_CODES.INTERNAL_ERROR,
+        "Unable to send verification code",
+        502,
+        { internal: { delivery: failed.status ?? failed.statusCode } },
+      );
     }
 
     this.logger.log(
