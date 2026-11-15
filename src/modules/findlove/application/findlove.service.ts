@@ -1,5 +1,5 @@
 import { ERROR_CODES } from "@eventis/contracts";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type {
   AgeDocumentType,
   AgeVerificationStatus,
@@ -10,6 +10,9 @@ import type {
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
+import { ENV, type Env } from "../../../config/env.js";
+import { StorageService } from "../../../infrastructure/storage/storage.service.js";
+import type { LoveProfileWithPhotos } from "../infrastructure/findlove.repository.js";
 import {
   adult,
   defaultPermissions,
@@ -30,7 +33,22 @@ export class FindLoveService {
   constructor(
     private readonly findlove: FindLoveRepository,
     private readonly clock: Clock,
+    private readonly storage: StorageService,
+    @Inject(ENV) private readonly env: Env,
   ) {}
+
+  private readonly photoUrl = (key: string) => this.storage.getPublicUrl(key);
+
+  private present(profile: LoveProfileWithPhotos) {
+    return toLoveProfileResponse(profile, this.photoUrl);
+  }
+
+  private presentConnection(
+    row: Parameters<typeof toConnectionResponse>[0],
+    viewerProfileId: string,
+  ) {
+    return toConnectionResponse(row, viewerProfileId, this.photoUrl);
+  }
 
   async submitAgeVerification(
     userId: string,
@@ -60,6 +78,18 @@ export class FindLoveService {
       dateOfBirth: input.dateOfBirth ?? null,
       adultConfirmedAt: this.clock.now(),
     });
+    if (this.env.FINDLOVE_AGE_AUTO_APPROVE && this.env.NODE_ENV !== "production") {
+      // DEV ONLY: stand in for the admin reviewer so the flow can be tested end to end.
+      const approved = await this.findlove.reviewAgeVerification({
+        id: row.id,
+        status: "VERIFIED",
+        reviewerId: userId,
+        rejectionReason: null,
+        dateOfBirth: input.dateOfBirth ?? null,
+        now: this.clock.now(),
+      });
+      if (approved) return toAgeVerificationResponse(approved);
+    }
     return toAgeVerificationResponse(row);
   }
 
@@ -126,7 +156,7 @@ export class FindLoveService {
 
   async getMyProfile(userId: string) {
     const profile = await this.findlove.getProfile(userId);
-    return profile ? toLoveProfileResponse(profile) : null;
+    return profile ? this.present(profile) : null;
   }
 
   async getProfileById(userId: string, profileId: string) {
@@ -138,7 +168,7 @@ export class FindLoveService {
     if (profile.country !== viewer.country)
       throw AppError.notFound("That Love profile");
     await this.assertEligible(profile.userId);
-    return toLoveProfileResponse(profile);
+    return this.present(profile);
   }
 
   async createProfile(
@@ -149,8 +179,8 @@ export class FindLoveService {
       interestedIn: LoveInterestedIn;
       dateOfBirth: Date;
       country: string;
-      city: string;
-      neighborhood: string;
+      city?: string | undefined;
+      neighborhood?: string | undefined;
       occupation?: string | null | undefined;
       bio?: string | null | undefined;
       interests?: string[] | undefined;
@@ -192,8 +222,8 @@ export class FindLoveService {
       interestedIn: input.interestedIn,
       dateOfBirth: input.dateOfBirth,
       country: input.country.trim(),
-      city: input.city.trim(),
-      neighborhood: input.neighborhood.trim(),
+      city: input.city?.trim() ?? "",
+      neighborhood: input.neighborhood?.trim() ?? "",
       occupation: input.occupation?.trim() || null,
       bio: input.bio?.trim() || null,
       interests: unique(input.interests ?? []),
@@ -201,7 +231,7 @@ export class FindLoveService {
       lookingFor: input.lookingFor?.trim() || null,
       photoKeys: input.photoKeys ?? [],
     });
-    return toLoveProfileResponse(profile);
+    return this.present(profile);
   }
 
   async updateProfile(
@@ -257,7 +287,7 @@ export class FindLoveService {
       ...(input.isHidden !== undefined ? { isHidden: input.isHidden } : {}),
       lastActiveAt: this.clock.now(),
     });
-    return toLoveProfileResponse(updated);
+    return this.present(updated);
   }
 
   async replacePhotos(userId: string, photoKeys: string[]) {
@@ -269,7 +299,7 @@ export class FindLoveService {
       profile.id,
       photoKeys,
     );
-    return toLoveProfileResponse(updated);
+    return this.present(updated);
   }
 
   async discover(
@@ -309,7 +339,7 @@ export class FindLoveService {
       maxAge: input.maxAge,
     });
     return {
-      items: items.map(toLoveProfileResponse),
+      items: items.map((item) => this.present(item)),
       page: input.page,
       limit: input.limit,
       total,
@@ -401,7 +431,7 @@ export class FindLoveService {
     );
     if (existing) {
       if (existing.status === "ACCEPTED") {
-        return { connection: toConnectionResponse(existing, profile.id) };
+        return { connection: this.presentConnection(existing, profile.id) };
       }
       if (existing.status === "PENDING") {
         throw AppError.conflict(
@@ -416,7 +446,7 @@ export class FindLoveService {
       message: input.message?.trim() || null,
     });
     return {
-      connection: toConnectionResponse(
+      connection: this.presentConnection(
         { ...connection, fromProfile: profile, toProfile: target },
         profile.id,
       ),
@@ -433,7 +463,7 @@ export class FindLoveService {
       direction,
     });
     return {
-      items: rows.map((row) => toConnectionResponse(row, profile.id)),
+      items: rows.map((row) => this.presentConnection(row, profile.id)),
     };
   }
 
@@ -471,7 +501,7 @@ export class FindLoveService {
       status,
       status === "REMOVED" ? null : this.clock.now(),
     );
-    return { connection: toConnectionResponse(row, profile.id) };
+    return { connection: this.presentConnection(row, profile.id) };
   }
 
   private async assertEligible(userId: string) {
@@ -505,9 +535,11 @@ export class FindLoveService {
 
 function normalizeUsername(value: string): string {
   const username = value.trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+  if (!/^[a-z0-9._]{3,20}$/.test(username)) {
     throw AppError.validation({
-      username: ["Use 3-20 lowercase letters, numbers or underscores"],
+      username: [
+        "Use 3-20 lowercase letters, numbers, dots or underscores",
+      ],
     });
   }
   return username;

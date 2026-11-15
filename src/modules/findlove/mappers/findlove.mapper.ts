@@ -11,7 +11,15 @@ export function ageFromDate(dateOfBirth: Date, now = new Date()): number {
   return age;
 }
 
-export function toLoveProfileResponse(profile: LoveProfileWithPhotos) {
+/** Turns a stored photo key into a URL the app can load. */
+export type PhotoUrlResolver = (key: string) => string | null;
+
+const noPhotoUrl: PhotoUrlResolver = () => null;
+
+export function toLoveProfileResponse(
+  profile: LoveProfileWithPhotos,
+  photoUrl: PhotoUrlResolver = noPhotoUrl,
+) {
   return {
     id: profile.id,
     userId: profile.userId,
@@ -33,6 +41,7 @@ export function toLoveProfileResponse(profile: LoveProfileWithPhotos) {
     photos: profile.photos.map((photo) => ({
       id: photo.id,
       key: photo.key,
+      url: photoUrl(photo.key),
       position: photo.position,
       isPrimary: photo.isPrimary,
     })),
@@ -46,6 +55,8 @@ export function toAgeVerificationResponse(row: AgeVerification) {
     documentType: row.documentType,
     status: row.status,
     rejectionReason: row.rejectionReason,
+    // Only the member's own verification is returned, so they may see their date of birth.
+    dateOfBirth: row.dateOfBirth?.toISOString().slice(0, 10) ?? null,
     submittedAt: row.submittedAt.toISOString(),
     reviewedAt: row.reviewedAt?.toISOString() ?? null,
   };
@@ -57,6 +68,7 @@ export function toConnectionResponse(
     toProfile?: LoveProfileWithPhotos | null;
   },
   viewerProfileId: string,
+  photoUrl: PhotoUrlResolver = noPhotoUrl,
 ) {
   const other =
     row.fromProfileId === viewerProfileId ? row.toProfile : row.fromProfile;
@@ -67,7 +79,7 @@ export function toConnectionResponse(
     conversationId: row.conversationId,
     direction:
       row.fromProfileId === viewerProfileId ? "outgoing" : "incoming",
-    otherProfile: other ? toLoveProfileResponse(other) : null,
+    otherProfile: other ? toLoveProfileResponse(other, photoUrl) : null,
     createdAt: row.createdAt.toISOString(),
     respondedAt: row.respondedAt?.toISOString() ?? null,
   };
