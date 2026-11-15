@@ -74,7 +74,23 @@ const envSchema = z
     SMS_API_KEY: optionalString,
 
     SENTRY_DSN: optionalString,
+
+    /**
+     * DEV ONLY. Marks every FindLove age verification VERIFIED as soon as it is
+     * submitted, so the flow can be tested without an admin reviewer.
+     */
+    FINDLOVE_AGE_AUTO_APPROVE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
   })
+  .refine(
+    (e) => !(e.FINDLOVE_AGE_AUTO_APPROVE && e.NODE_ENV === "production"),
+    {
+      message: "FINDLOVE_AGE_AUTO_APPROVE must not be enabled in production",
+      path: ["FINDLOVE_AGE_AUTO_APPROVE"],
+    },
+  )
 
   .refine((e) => e.NODE_ENV !== "production" || e.PAYMENT_PROVIDER !== "fake", {
     message: 'PAYMENT_PROVIDER must not be "fake" in production',

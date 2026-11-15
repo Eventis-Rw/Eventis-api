@@ -60,8 +60,9 @@ const profileSchema = z.object({
   interestedIn: z.enum(["WOMEN", "MEN", "EVERYONE"]),
   dateOfBirth: z.coerce.date(),
   country: z.string().trim().min(1).max(80),
-  city: z.string().trim().min(1).max(80),
-  neighborhood: z.string().trim().min(1).max(80),
+  // Optional: the app only lists neighbourhoods for some countries. Stored as "" when absent.
+  city: z.string().trim().max(80).optional(),
+  neighborhood: z.string().trim().max(80).optional(),
   occupation: z.string().trim().max(120).nullable().optional(),
   bio: z.string().trim().max(160).nullable().optional(),
   interests: z.array(z.string().trim().min(1).max(30)).max(15).optional(),
