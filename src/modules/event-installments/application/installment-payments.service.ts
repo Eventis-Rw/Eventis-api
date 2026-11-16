@@ -1,4 +1,3 @@
-
 import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable, Logger } from "@nestjs/common";
 
@@ -10,8 +9,8 @@ import {
   type PaymentIntentWithPlan,
   type PaymentCompletionHandler,
 } from "../../payments/index.js";
+import { businessDate } from "../domain/admin-workspace.engine.js";
 import {
-  isEarlySchedule,
   type EventInstallmentAgreement,
   type EventInstallmentSchedule,
 } from "../domain/installment-agreement.js";
@@ -60,9 +59,6 @@ export class InstallmentPaymentsService {
       input.agreementId,
       input.scheduleId,
     );
-    const siblings = await this.installments.findSchedulesForAgreement(
-      agreement.id,
-    );
 
     const outstanding = outstandingFor(
       schedule.amountDueMinor,
@@ -87,7 +83,9 @@ export class InstallmentPaymentsService {
         amount_minor: ["This agreement requires full installments"],
       });
     }
-    const early = isEarlySchedule(siblings, schedule.id);
+    const early =
+      businessDate(schedule.dueDate.toISOString()) >
+      businessDate(now.toISOString());
     if (early && !agreement.allowEarlyPayment) {
       throw AppError.validation({
         schedule_id: ["This installment is not yet due"],
@@ -120,16 +118,18 @@ export class InstallmentPaymentsService {
       };
     }
 
-    const installmentPayment = await this.installments.createInstallmentPayment({
-      agreementId: agreement.id,
-      scheduleId: schedule.id,
-      customerId: agreement.customerId,
-      source: "PROVIDER",
-      amountMinor: input.amountMinor,
-      currency: agreement.currency,
-      paymentMethod: input.paymentMethod,
-      transactionReference: null,
-    });
+    const installmentPayment = await this.installments.createInstallmentPayment(
+      {
+        agreementId: agreement.id,
+        scheduleId: schedule.id,
+        customerId: agreement.customerId,
+        source: "PROVIDER",
+        amountMinor: input.amountMinor,
+        currency: agreement.currency,
+        paymentMethod: input.paymentMethod,
+        transactionReference: null,
+      },
+    );
 
     const collectionInput: InitiateCollectionInput = {
       userId: input.userId,
@@ -150,10 +150,7 @@ export class InstallmentPaymentsService {
     );
     const intent = collection.payment;
 
-    await this.installments.linkPaymentIntent(
-      installmentPayment.id,
-      intent.id,
-    );
+    await this.installments.linkPaymentIntent(installmentPayment.id, intent.id);
 
     const fresh =
       (await this.installments.findInstallmentPaymentById(
@@ -217,9 +214,11 @@ export class InstallmentPaymentsService {
   }): Promise<void> {
     const installmentPaymentId =
       input.referenceId ??
-      (await this.installments.findInstallmentPaymentByIntent(
-        input.paymentIntentId,
-      ))?.id;
+      (
+        await this.installments.findInstallmentPaymentByIntent(
+          input.paymentIntentId,
+        )
+      )?.id;
     if (!installmentPaymentId) {
       this.logger.warn(
         `EVENT_INSTALLMENT payment intent ${input.paymentIntentId} has no installment payment record`,
@@ -288,6 +287,18 @@ export class InstallmentPaymentsService {
       });
     }
 
+    if (input.amountMinor < outstanding && !agreement.allowPartialPayment)
+      throw AppError.validation({
+        amount_minor: ["This agreement requires full installments"],
+      });
+    if (
+      !agreement.allowEarlyPayment &&
+      businessDate(schedule.dueDate.toISOString()) >
+        businessDate(this.clock.now().toISOString())
+    )
+      throw AppError.validation({
+        schedule_id: ["This installment is not yet due"],
+      });
     const payment = await this.installments.createInstallmentPayment({
       agreementId: agreement.id,
       scheduleId: schedule.id,
@@ -338,7 +349,9 @@ export class InstallmentPaymentsService {
       payment.agreementId,
     );
     const event = agreement
-      ? await this.installments.findEventById(agreement.eventId)
+      ? agreement.eventId
+        ? await this.installments.findEventById(agreement.eventId)
+        : null
       : null;
     if (event && event.posterId === actor.userId) return payment;
     throw AppError.forbidden("You do not have access to this payment");
@@ -447,10 +460,10 @@ export class InstallmentPaymentsService {
 }
 
 function assertAgreementPayable(agreement: EventInstallmentAgreement): void {
-  if (agreement.status !== "ACTIVE") {
+  if (!["ACTIVE", "OVERDUE"].includes(agreement.status)) {
     throw AppError.conflict(
       ERROR_CODES.VALIDATION_FAILED,
-      `This agreement is ${agreement.status}; only ACTIVE agreements accept payments`,
+      `This agreement is ${agreement.status}; only ACTIVE or OVERDUE agreements accept payments`,
     );
   }
 }
@@ -507,7 +520,11 @@ export function installmentCompletionHandler(
   };
 }
 
-function isAdminActor(actor: { userId: string; role: string; roles: string[] }) {
+function isAdminActor(actor: {
+  userId: string;
+  role: string;
+  roles: string[];
+}) {
   return [actor.role, ...actor.roles].some(
     (role) => role.toUpperCase() === "ADMIN",
   );

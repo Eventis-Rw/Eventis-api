@@ -210,7 +210,10 @@ export class PaymentCollectionsService {
     if (!payment || payment.userId !== userId) {
       throw AppError.notFound("Payment");
     }
-    if (isTerminalPaymentStatus(payment.status)) {
+    if (
+      payment.provider === "admin_recorded" ||
+      isTerminalPaymentStatus(payment.status)
+    ) {
       return payment;
     }
 
@@ -232,9 +235,7 @@ export class PaymentCollectionsService {
           result.providerTransactionId ?? payment.providerTransactionId,
       });
       await this.completions.dispatchSucceeded(updated, now);
-      return (
-        (await this.payments.findPaymentById(payment.id)) ?? updated
-      );
+      return (await this.payments.findPaymentById(payment.id)) ?? updated;
     }
 
     const providerStatus = providerStatusToPaymentStatus(result.status);

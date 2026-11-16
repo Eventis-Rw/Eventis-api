@@ -53,6 +53,12 @@ export class InstallmentPreviewService {
     plan: EventInstallmentPlan,
     input: { totalAmountMinor: bigint; currency: string; startDate: Date },
   ): InstallmentPreview {
+    if (plan.adminTerms)
+      throw AppError.validation({
+        plan_id: [
+          "Organiser repayment templates must be assigned through the admin installment workspace",
+        ],
+      });
     try {
       validatePlanTerms({
         name: plan.name,

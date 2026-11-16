@@ -8,6 +8,13 @@ NestJS with the Fastify adapter, **Prisma**, PostgreSQL with PostGIS, Redis and 
 This repository is the **architecture home** for Eventis: cross-repository decisions are
 recorded in [`docs/adr`](docs/adr/).
 
+## Admin dashboard integration
+
+The admin integration contracts and migration behavior are documented in
+[the integration guide](docs/guides/admin-dashboard-integration.md). This branch includes real
+FindLove membership/admin records and organiser installment workflows; older architecture notes
+below describe the original foundation and do not fully reflect the current modules.
+
 ## Project overview
 
 Eventis connects organizers who list events with people who discover, buy tickets and

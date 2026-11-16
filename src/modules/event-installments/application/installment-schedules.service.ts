@@ -1,7 +1,6 @@
 import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
-
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
@@ -116,10 +115,7 @@ export class InstallmentSchedulesService {
     }
 
     await this.installments.setScheduleStatus(scheduleId, "WAIVED");
-    await this.installments.refreshAgreement(
-      agreement.id,
-      this.clock.now(),
-    );
+    await this.installments.refreshAgreement(agreement.id, this.clock.now());
 
     await this.installments.createAuditLog({
       actorId: actor.userId,
@@ -154,10 +150,7 @@ export class InstallmentSchedulesService {
     const now = this.clock.now();
     let created = 0;
     for (const { schedule, agreement } of rows.items) {
-      if (
-        agreement.status !== "ACTIVE" &&
-        agreement.status !== "OVERDUE"
-      ) {
+      if (agreement.status !== "ACTIVE" && agreement.status !== "OVERDUE") {
         continue;
       }
       if (isScheduleOverdue(schedule, agreement.gracePeriodDays, now)) {
@@ -184,7 +177,9 @@ export class InstallmentSchedulesService {
     const roles = [actor.role, ...actor.roles];
     if (roles.some((role) => role.toUpperCase() === "ADMIN")) return;
     if (agreement.customerId === actor.userId) return;
-    const event = await this.installments.findEventById(agreement.eventId);
+    const event = agreement.eventId
+      ? await this.installments.findEventById(agreement.eventId)
+      : null;
     if (event && event.posterId === actor.userId) return;
     throw AppError.forbidden("You do not have access to this agreement");
   }

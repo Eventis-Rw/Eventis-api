@@ -6,10 +6,13 @@ import type {
   PaymentCollectionsService,
   PaymentIntentWithPlan,
 } from "../../payments/index.js";
-import type { EventInstallmentAgreement } from "../domain/installment-agreement.js";
-import type { EventInstallmentSchedule } from "../domain/installment-agreement.js";
+import type {
+  EventInstallmentAgreement,
+  EventInstallmentSchedule,
+} from "../domain/installment-agreement.js";
 import type { EventInstallmentPayment } from "../domain/installment-payment.js";
 import type { EventInstallmentRepository } from "../infrastructure/installment.repository.js";
+
 import { InstallmentPaymentsService } from "./installment-payments.service.js";
 
 const NOW = new Date("2026-02-01T00:00:00.000Z");
@@ -111,14 +114,16 @@ function intent(
   } as PaymentIntentWithPlan;
 }
 
-function harness(options: {
-  agreement?: EventInstallmentAgreement;
-  schedule?: EventInstallmentSchedule;
-  siblings?: EventInstallmentSchedule[];
-  pending?: EventInstallmentPayment | null;
-  created?: EventInstallmentPayment;
-  foundById?: EventInstallmentPayment | null;
-} = {}) {
+function harness(
+  options: {
+    agreement?: EventInstallmentAgreement;
+    schedule?: EventInstallmentSchedule;
+    siblings?: EventInstallmentSchedule[];
+    pending?: EventInstallmentPayment | null;
+    created?: EventInstallmentPayment;
+    foundById?: EventInstallmentPayment | null;
+  } = {},
+) {
   const agreementRow = options.agreement ?? agreement();
   const scheduleRow = options.schedule ?? schedule();
   const repo = {
@@ -130,12 +135,10 @@ function harness(options: {
       async () => options.siblings ?? [scheduleRow],
     ),
     findPendingInstallmentPayment: mock(async () => options.pending ?? null),
-    createInstallmentPayment: mock(
-      async () => options.created ?? payment(),
-    ),
+    createInstallmentPayment: mock(async () => options.created ?? payment()),
     linkPaymentIntent: mock(async () => undefined),
     findInstallmentPaymentById: mock(
-      async () => options.foundById ?? (options.created ?? payment()),
+      async () => options.foundById ?? options.created ?? payment(),
     ),
     applyConfirmedCollection: mock(async () => ({
       applied: true,
@@ -193,8 +196,18 @@ describe("InstallmentPaymentsService.initiate", () => {
   });
 
   it("rejects a non-active agreement", async () => {
-    const { service } = harness({ agreement: agreement({ status: "OVERDUE" }) });
+    const { service } = harness({
+      agreement: agreement({ status: "SUSPENDED" }),
+    });
     await expectStatus(service.initiate(baseInput, undefined), 409);
+  });
+
+  it("accepts collection for an overdue agreement", async () => {
+    const { service } = harness({
+      agreement: agreement({ status: "OVERDUE" }),
+    });
+    const result = await service.initiate(baseInput, undefined);
+    expect(result).toBeDefined();
   });
 
   it("rejects a paid schedule", async () => {
@@ -232,6 +245,7 @@ describe("InstallmentPaymentsService.initiate", () => {
     const first = schedule({ id: "sch-1", installmentNumber: 1 });
     const second = schedule({
       id: "sch-2",
+      dueDate: new Date("2026-03-01T00:00:00Z"),
       installmentNumber: 2,
       amountDueMinor: 50_000n,
     });
@@ -241,10 +255,7 @@ describe("InstallmentPaymentsService.initiate", () => {
       agreement: agreement({ allowEarlyPayment: false }),
     });
     await expectStatus(
-      service.initiate(
-        { ...baseInput, scheduleId: "sch-2" },
-        undefined,
-      ),
+      service.initiate({ ...baseInput, scheduleId: "sch-2" }, undefined),
       422,
     );
   });
@@ -296,10 +307,7 @@ describe("InstallmentPaymentsService.initiate", () => {
     const result = await service.initiate(baseInput, undefined);
 
     expect(repo.createInstallmentPayment).not.toHaveBeenCalled();
-    expect(collections.checkStatus).toHaveBeenCalledWith(
-      "cust-1",
-      "intent-1",
-    );
+    expect(collections.checkStatus).toHaveBeenCalledWith("cust-1", "intent-1");
     expect(result.message).toContain("already in progress");
   });
 });
@@ -459,7 +467,10 @@ describe("InstallmentPaymentsService.recordManualPayment", () => {
     );
 
     expect(repo.createInstallmentPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ source: "MANUAL", transactionReference: "bank-1" }),
+      expect.objectContaining({
+        source: "MANUAL",
+        transactionReference: "bank-1",
+      }),
     );
     expect(repo.createAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({

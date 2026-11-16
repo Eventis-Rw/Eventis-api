@@ -1,11 +1,8 @@
-import {
-  ERROR_CODES,
-  type AuthTokens,
-  type RefreshRequest,
-} from "@eventis/contracts";
+import { ERROR_CODES, type AuthTokens } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
+import type { RefreshRequest } from "../../../common/contracts/auth.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { isRefreshReusable, isRefreshReuse } from "../domain/user.js";
 import {

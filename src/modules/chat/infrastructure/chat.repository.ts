@@ -692,12 +692,16 @@ export class ChatRepository {
       await Promise.all([
         this.prisma.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, findLoveProfileType: true },
+          select: {
+            id: true,
+            findLoveProfileType: true,
+            loveProfile: { select: { country: true } },
+          },
         }),
-        this.hasSubscription(input.actorId, input.service, input.now),
+        this.activeSubscription(input.actorId, input.service, input.now),
         input.peerId
-          ? this.hasSubscription(input.peerId, input.service, input.now)
-          : Promise.resolve(false),
+          ? this.activeSubscription(input.peerId, input.service, input.now)
+          : Promise.resolve(null),
         input.peerId
           ? this.areBlocked(input.actorId, input.peerId)
           : Promise.resolve(false),
@@ -712,13 +716,25 @@ export class ChatRepository {
     return {
       blocked: block,
       actor: {
-        profileType: actorUser?.findLoveProfileType ?? "PRIVATE",
-        hasEligibleSubscription: actorSub,
+        profileType: actorSub?.accountType ?? "PUBLIC",
+        country: actorUser?.loveProfile?.country ?? "",
+        ...(actorSub?.permissionsSnapshot
+          ? {
+              connectionPermissions: (
+                actorSub.permissionsSnapshot as unknown as {
+                  public: { public: boolean; private: boolean };
+                  private: { public: boolean; private: boolean };
+                }
+              )[actorSub.accountType === "PRIVATE" ? "private" : "public"],
+            }
+          : {}),
+        hasEligibleSubscription: actorSub !== null,
         hasPublishingPayment: false,
       },
       peer: {
-        profileType: peerUser?.findLoveProfileType ?? "PRIVATE",
-        hasEligibleSubscription: peerSub,
+        profileType: peerSub?.accountType ?? "PUBLIC",
+        country: peerUser?.loveProfile?.country ?? "",
+        hasEligibleSubscription: peerSub !== null,
         hasPublishingPayment: false,
       },
       connection,
@@ -802,16 +818,40 @@ export class ChatRepository {
     return row ? toConnection(row) : null;
   }
 
-  private async hasSubscription(
+  private async activeSubscription(
     userId: string,
     service: MessagingService,
     now: Date,
-  ): Promise<boolean> {
+  ) {
     const row = await this.prisma.serviceSubscription.findFirst({
-      where: { userId, service, expiresAt: { gt: now } },
-      select: { id: true },
+      where: {
+        userId,
+        service,
+        revokedAt: null,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+        user: { status: "ACTIVE" },
+      },
+      orderBy: { expiresAt: "desc" },
     });
-    return row !== null;
+    if (service === "FINDLOVE") {
+      const verification = await this.prisma.ageVerification.findFirst({
+        where: { userId },
+        orderBy: { submittedAt: "desc" },
+      });
+      if (verification?.status !== "VERIFIED" || !verification.dateOfBirth)
+        return null;
+      const birth = verification.dateOfBirth;
+      let age = now.getUTCFullYear() - birth.getUTCFullYear();
+      if (
+        now.getUTCMonth() < birth.getUTCMonth() ||
+        (now.getUTCMonth() === birth.getUTCMonth() &&
+          now.getUTCDate() < birth.getUTCDate())
+      )
+        age--;
+      if (age < 18) return null;
+    }
+    return row;
   }
 
   private async findConnectionFacts(

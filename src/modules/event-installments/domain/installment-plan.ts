@@ -12,6 +12,7 @@ export type LateFeeType = "FIXED" | "PERCENT";
 
 export interface EventInstallmentPlan {
   readonly id: string;
+  readonly adminTerms?: unknown;
   readonly name: string;
   readonly description: string | null;
   readonly frequency: InstallmentFrequency;
@@ -55,9 +56,10 @@ export function initialPaymentFor(
   }
   const bps = plan.initialPaymentValue;
   if (bps <= 0n) return 0n;
-  const capped = bps > BigInt(MAX_INITIAL_PAYMENT_BPS)
-    ? BigInt(MAX_INITIAL_PAYMENT_BPS)
-    : bps;
+  const capped =
+    bps > BigInt(MAX_INITIAL_PAYMENT_BPS)
+      ? BigInt(MAX_INITIAL_PAYMENT_BPS)
+      : bps;
   return (totalAmountMinor * capped) / 10_000n;
 }
 
@@ -68,9 +70,10 @@ export function computeLateFeeAmount(
   if (amountDueMinor <= 0n) return 0n;
   if (lateFee.feeType === "FIXED") return lateFee.value;
   if (lateFee.value <= 0n) return 0n;
-  const capped = lateFee.value > BigInt(MAX_LATE_FEE_BPS)
-    ? BigInt(MAX_LATE_FEE_BPS)
-    : lateFee.value;
+  const capped =
+    lateFee.value > BigInt(MAX_LATE_FEE_BPS)
+      ? BigInt(MAX_LATE_FEE_BPS)
+      : lateFee.value;
   return (amountDueMinor * capped) / 10_000n;
 }
 

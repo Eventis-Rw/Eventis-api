@@ -1,0 +1,189 @@
+[
+  {
+    "name": "weekly deposit presentation example",
+    "total": 18000,
+    "initial": 2000,
+    "count": 4,
+    "interest": 0,
+    "frequency": "weekly",
+    "interval": 1,
+    "start": "2026-11-11",
+    "expected": [
+      {
+        "amount_minor": "2000",
+        "due_date": "2026-11-11",
+        "initial": true
+      },
+      {
+        "amount_minor": "4000",
+        "due_date": "2026-11-18",
+        "initial": false
+      },
+      {
+        "amount_minor": "4000",
+        "due_date": "2026-11-25",
+        "initial": false
+      },
+      {
+        "amount_minor": "4000",
+        "due_date": "2026-12-02",
+        "initial": false
+      },
+      {
+        "amount_minor": "4000",
+        "due_date": "2026-12-09",
+        "initial": false
+      }
+    ]
+  },
+  {
+    "name": "no deposit starts immediately",
+    "total": 10000,
+    "initial": 0,
+    "count": 3,
+    "interest": 0,
+    "frequency": "monthly",
+    "interval": 1,
+    "start": "2026-01-31",
+    "expected": [
+      {
+        "amount_minor": "3334",
+        "due_date": "2026-01-31",
+        "initial": false
+      },
+      {
+        "amount_minor": "3333",
+        "due_date": "2026-02-28",
+        "initial": false
+      },
+      {
+        "amount_minor": "3333",
+        "due_date": "2026-03-31",
+        "initial": false
+      }
+    ]
+  },
+  {
+    "name": "round half unit interest up",
+    "total": 15000,
+    "initial": 0,
+    "count": 3,
+    "interest": 0.01,
+    "frequency": "monthly",
+    "interval": 1,
+    "start": "2026-01-31",
+    "expected": [
+      {
+        "amount_minor": "5001",
+        "due_date": "2026-01-31",
+        "initial": false
+      },
+      {
+        "amount_minor": "5001",
+        "due_date": "2026-02-28",
+        "initial": false
+      },
+      {
+        "amount_minor": "5000",
+        "due_date": "2026-03-31",
+        "initial": false
+      }
+    ]
+  },
+  {
+    "name": "spread remainder across earliest installments",
+    "total": 100000,
+    "initial": 0,
+    "count": 3,
+    "interest": 3.33,
+    "frequency": "monthly",
+    "interval": 1,
+    "start": "2026-01-31",
+    "expected": [
+      {
+        "amount_minor": "34444",
+        "due_date": "2026-01-31",
+        "initial": false
+      },
+      {
+        "amount_minor": "34443",
+        "due_date": "2026-02-28",
+        "initial": false
+      },
+      {
+        "amount_minor": "34443",
+        "due_date": "2026-03-31",
+        "initial": false
+      }
+    ]
+  },
+  {
+    "name": "anchor leap day yearly",
+    "total": 10001,
+    "initial": 1,
+    "count": 3,
+    "interest": 0,
+    "frequency": "yearly",
+    "interval": 1,
+    "start": "2024-02-29",
+    "expected": [
+      {
+        "amount_minor": "1",
+        "due_date": "2024-02-29",
+        "initial": true
+      },
+      {
+        "amount_minor": "3334",
+        "due_date": "2025-02-28",
+        "initial": false
+      },
+      {
+        "amount_minor": "3333",
+        "due_date": "2026-02-28",
+        "initial": false
+      },
+      {
+        "amount_minor": "3333",
+        "due_date": "2027-02-28",
+        "initial": false
+      }
+    ]
+  },
+  {
+    "name": "two-month interval with deposit",
+    "total": 10001,
+    "initial": 501,
+    "count": 4,
+    "interest": 7.5,
+    "frequency": "monthly",
+    "interval": 2,
+    "start": "2026-12-31",
+    "expected": [
+      {
+        "amount_minor": "501",
+        "due_date": "2026-12-31",
+        "initial": true
+      },
+      {
+        "amount_minor": "2554",
+        "due_date": "2027-02-28",
+        "initial": false
+      },
+      {
+        "amount_minor": "2553",
+        "due_date": "2027-04-30",
+        "initial": false
+      },
+      {
+        "amount_minor": "2553",
+        "due_date": "2027-06-30",
+        "initial": false
+      },
+      {
+        "amount_minor": "2553",
+        "due_date": "2027-08-31",
+        "initial": false
+      }
+    ]
+  }
+]

@@ -6,15 +6,11 @@
  * remainder absorbed by the last installment so the generated schedule always
  * reconciles exactly with the agreed payable amount.
  *
- * Rounding policy:
- *   1. Interest is simple interest on the financed principal for the whole
- *      term: floor(financed * rateBps / 10000).
- *   2. Each regular installment is floor(financedPayable / count); the last
- *      installment receives the remainder, so the sum is exact.
- *   3. Installment interest is floor(interest / count), remainder on the last
- *      installment; principal_i = amount_i - interest_i.
- *   4. Late fees: FIXED is the configured amount; PERCENT is
- *      floor(amountDue * bps / 10000) — one fee, no remainder to absorb.
+ * Admin-compatible rounding policy:
+ * Interest rounds half up to the nearest minor unit using integer arithmetic.
+ * Remaining minor units are distributed to the earliest installments, matching
+ * the existing admin preview. With no deposit the first installment is due on
+ * the start date; with a deposit the regular schedule starts one interval later.
  */
 
 import type { InstallmentFrequency } from "./installment-plan.js";
@@ -67,13 +63,14 @@ export function computeAgreementTerms(
     );
   }
 
-  const financedAmountMinor = input.totalAmountMinor - input.initialPaymentMinor;
+  const financedAmountMinor =
+    input.totalAmountMinor - input.initialPaymentMinor;
   const interestAmountMinor =
     input.interestRateBps === 0
       ? 0n
-      : (financedAmountMinor * BigInt(input.interestRateBps)) / 10_000n;
-  const totalPayableMinor =
-    input.totalAmountMinor + interestAmountMinor;
+      : (financedAmountMinor * BigInt(input.interestRateBps) + 5_000n) /
+        10_000n;
+  const totalPayableMinor = input.totalAmountMinor + interestAmountMinor;
 
   return {
     totalAmountMinor: input.totalAmountMinor,
@@ -131,21 +128,19 @@ export function generateScheduleFromAmounts(
   const baseAmount = financedPayableMinor / count;
   const remainder = financedPayableMinor - baseAmount * count;
   const baseInterest = input.interestAmountMinor / count;
-  const interestRemainder =
-    input.interestAmountMinor - baseInterest * count;
+  const interestRemainder = input.interestAmountMinor - baseInterest * count;
 
   for (let i = 1; i <= input.installmentCount; i += 1) {
-    const isLast = i === input.installmentCount;
-    const amountDueMinor = isLast ? baseAmount + remainder : baseAmount;
-    const interestAmountMinor = isLast
-      ? baseInterest + interestRemainder
-      : baseInterest;
+    const position = BigInt(i - 1);
+    const amountDueMinor = baseAmount + (position < remainder ? 1n : 0n);
+    const interestAmountMinor =
+      baseInterest + (position < interestRemainder ? 1n : 0n);
     rows.push({
       installmentNumber: i + offset,
       isInitialPayment: false,
       dueDate: addIntervals(
         input.startDate,
-        i,
+        i - (offset === 0 ? 1 : 0),
         input.frequency,
         input.intervalCount,
       ),
@@ -244,6 +239,7 @@ export function outstandingFor(
   amountPaidMinor: bigint,
   refundedAmountMinor: bigint,
 ): bigint {
-  const outstanding = amountDueMinor - netCollected(amountPaidMinor, refundedAmountMinor);
+  const outstanding =
+    amountDueMinor - netCollected(amountPaidMinor, refundedAmountMinor);
   return outstanding < 0n ? 0n : outstanding;
 }

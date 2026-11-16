@@ -12,6 +12,7 @@ import type {
   Prisma,
 } from "@prisma/client";
 
+import { Clock } from "../../../common/clock.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
 export interface LoveProfileWithPhotos extends LoveProfile {
@@ -25,7 +26,26 @@ export interface LoveProfileWithPhotos extends LoveProfile {
 
 @Injectable()
 export class FindLoveRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clock: Clock,
+  ) {}
+
+  async accessFacts(userId: string, now: Date) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const verification = await this.getLatestAgeVerification(userId);
+    const subscription = await this.prisma.serviceSubscription.findFirst({
+      where: {
+        userId,
+        service: "FINDLOVE",
+        revokedAt: null,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+      },
+      orderBy: { expiresAt: "desc" },
+    });
+    return { user, verification, subscription };
+  }
 
   async getLatestAgeVerification(
     userId: string,
@@ -107,19 +127,20 @@ export class FindLoveRepository {
     });
   }
 
-  async findProfileById(
-    id: string,
-  ): Promise<LoveProfileWithPhotos | null> {
+  async findProfileById(id: string): Promise<LoveProfileWithPhotos | null> {
     return this.prisma.loveProfile.findUnique({
       where: { id },
-      include: { photos: { orderBy: { position: "asc" } } },
+      include: {
+        photos: {
+          where: { moderationStatus: "approved" },
+          orderBy: { position: "asc" },
+        },
+      },
     });
   }
 
   async usernameExists(username: string): Promise<boolean> {
-    return (
-      (await this.prisma.loveProfile.count({ where: { username } })) > 0
-    );
+    return (await this.prisma.loveProfile.count({ where: { username } })) > 0;
   }
 
   async createProfile(input: {
@@ -173,7 +194,12 @@ export class FindLoveRepository {
       });
       return tx.loveProfile.findUniqueOrThrow({
         where: { id: profile.id },
-        include: { photos: { orderBy: { position: "asc" } } },
+        include: {
+          photos: {
+            where: { moderationStatus: "approved" },
+            orderBy: { position: "asc" },
+          },
+        },
       });
     });
   }
@@ -202,7 +228,12 @@ export class FindLoveRepository {
     });
     return this.prisma.loveProfile.findUniqueOrThrow({
       where: { userId },
-      include: { photos: { orderBy: { position: "asc" } } },
+      include: {
+        photos: {
+          where: { moderationStatus: "approved" },
+          orderBy: { position: "asc" },
+        },
+      },
     });
   }
 
@@ -225,12 +256,17 @@ export class FindLoveRepository {
       }
       await tx.loveProfile.update({
         where: { userId },
-        data: { updatedAt: new Date() },
+        data: { updatedAt: this.clock.now() },
       });
     });
     return this.prisma.loveProfile.findUniqueOrThrow({
       where: { userId },
-      include: { photos: { orderBy: { position: "asc" } } },
+      include: {
+        photos: {
+          where: { moderationStatus: "approved" },
+          orderBy: { position: "asc" },
+        },
+      },
     });
   }
 
@@ -246,7 +282,7 @@ export class FindLoveRepository {
     minAge?: number | undefined;
     maxAge?: number | undefined;
   }): Promise<{ items: LoveProfileWithPhotos[]; total: number }> {
-    const now = new Date();
+    const now = this.clock.now();
     const targetGenders =
       input.requesterInterestedIn === "WOMEN"
         ? (["WOMAN"] as LoveGender[])
@@ -262,6 +298,7 @@ export class FindLoveRepository {
 
     const where: Prisma.LoveProfileWhereInput = {
       userId: { not: input.requesterId },
+      user: { status: "ACTIVE", deletedAt: null },
       isHidden: false,
       gender: input.gender ?? { in: targetGenders },
       interestedIn: { in: targetInterestedIn },
@@ -270,12 +307,8 @@ export class FindLoveRepository {
       ...(input.minAge || input.maxAge
         ? {
             dateOfBirth: {
-              ...(input.maxAge
-                ? { gte: dateYearsAgo(now, input.maxAge) }
-                : {}),
-              ...(input.minAge
-                ? { lte: dateYearsAgo(now, input.minAge) }
-                : {}),
+              ...(input.maxAge ? { gte: dateYearsAgo(now, input.maxAge) } : {}),
+              ...(input.minAge ? { lte: dateYearsAgo(now, input.minAge) } : {}),
             },
           }
         : {}),
@@ -283,7 +316,12 @@ export class FindLoveRepository {
     const [items, total] = await Promise.all([
       this.prisma.loveProfile.findMany({
         where,
-        include: { photos: { orderBy: { position: "asc" } } },
+        include: {
+          photos: {
+            where: { moderationStatus: "approved" },
+            orderBy: { position: "asc" },
+          },
+        },
         orderBy: [{ lastActiveAt: "desc" }, { createdAt: "desc" }],
         skip: input.skip,
         take: input.take,
@@ -330,7 +368,7 @@ export class FindLoveRepository {
       if (existing.status === "ACCEPTED") return existing;
       return this.prisma.loveConnection.update({
         where: { id: existing.id },
-        data: { status: "ACCEPTED", respondedAt: new Date() },
+        data: { status: "ACCEPTED", respondedAt: this.clock.now() },
       });
     }
     return this.prisma.loveConnection.create({
@@ -338,7 +376,7 @@ export class FindLoveRepository {
         fromProfileId,
         toProfileId,
         status: "ACCEPTED",
-        respondedAt: new Date(),
+        respondedAt: this.clock.now(),
       },
     });
   }
@@ -382,7 +420,10 @@ export class FindLoveRepository {
       input.direction === "incoming"
         ? { toProfileId: input.profileId, status: "PENDING" }
         : input.direction === "outgoing"
-          ? { fromProfileId: input.profileId, status: { in: ["PENDING", "ACCEPTED"] } }
+          ? {
+              fromProfileId: input.profileId,
+              status: { in: ["PENDING", "ACCEPTED"] },
+            }
           : {
               status: "ACCEPTED",
               OR: [
@@ -393,8 +434,22 @@ export class FindLoveRepository {
     return this.prisma.loveConnection.findMany({
       where,
       include: {
-        fromProfile: { include: { photos: { orderBy: { position: "asc" } } } },
-        toProfile: { include: { photos: { orderBy: { position: "asc" } } } },
+        fromProfile: {
+          include: {
+            photos: {
+              where: { moderationStatus: "approved" },
+              orderBy: { position: "asc" },
+            },
+          },
+        },
+        toProfile: {
+          include: {
+            photos: {
+              where: { moderationStatus: "approved" },
+              orderBy: { position: "asc" },
+            },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
       take: 100,

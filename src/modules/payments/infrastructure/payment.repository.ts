@@ -6,6 +6,7 @@ import {
   type ServiceSubscription as PrismaServiceSubscription,
 } from "@prisma/client";
 
+import { AppError } from "../../../common/errors/app-error.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import {
   FINDLOVE_SERVICE,
@@ -116,9 +117,13 @@ export class PaymentRepository {
     if (input.priceMinor !== undefined) data.priceMinor = input.priceMinor;
     if (input.isActive !== undefined) data.isActive = input.isActive;
 
-    const row = await this.prisma.installmentPlan.update({
-      where: { id },
-      data,
+    const row = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.installmentPlan.update({ where: { id }, data });
+      await tx.findLoveAdminSettings.update({
+        where: { id: "global" },
+        data: { revision: { increment: 1 } },
+      });
+      return updated;
     });
     return toInstallmentPlanDomain(row);
   }
@@ -145,24 +150,66 @@ export class PaymentRepository {
     idempotencyKey: string | null;
     expiresAt: Date;
   }): Promise<PaymentIntentWithPlan> {
-    const row = await this.prisma.paymentIntent.create({
-      data: {
-        reference: input.reference,
-        userId: input.userId,
-        purpose: "FINDLOVE",
-        installmentPlanId: input.installmentPlanId,
-        accountType: input.accountType,
-        amountMinor: input.amountMinor,
-        currency: input.currency,
-        paymentMethod: input.paymentMethod,
-        phoneNumber: input.phoneNumber,
-        provider: input.provider,
-        idempotencyKey: input.idempotencyKey,
-        expiresAt: input.expiresAt,
-      },
-      include: { installmentPlan: true },
+    return this.prisma.$transaction(async (tx) => {
+      const quotedPlan = await tx.installmentPlan.findUniqueOrThrow({
+        where: { id: input.installmentPlanId },
+      });
+      if (
+        !quotedPlan.isActive ||
+        quotedPlan.priceMinor !== input.amountMinor ||
+        quotedPlan.currency !== input.currency ||
+        quotedPlan.accountType !== input.accountType
+      )
+        throw AppError.validation({
+          installment_id: [
+            "The membership plan changed. Reload checkout before paying.",
+          ],
+        });
+      if (input.amountMinor <= 0n || input.amountMinor > 1_000_000_000n)
+        throw AppError.validation({
+          amount: ["Membership amount is outside the supported range"],
+        });
+      // eslint-disable-next-line no-restricted-syntax -- Exact RWF integer conversion is bounded to 1e9 above.
+      const price = Number(input.amountMinor); // money-guard: exact positive RWF integer bounded to 1e9 above
+      const settings = await tx.findLoveAdminSettings.findUniqueOrThrow({
+        where: { id: "global" },
+      });
+      const periods = {
+        WEEKLY: "week",
+        MONTHLY: "month",
+        YEARLY: "year",
+      } as const;
+      const quote = {
+        plan: {
+          id: `findlove_${quotedPlan.accountType.toLowerCase()}_${periods[quotedPlan.interval]}`,
+          tier: quotedPlan.accountType.toLowerCase(),
+          period: periods[quotedPlan.interval],
+          price,
+          days: quotedPlan.durationDays,
+          active: true,
+        },
+        permissions: settings.permissions,
+      };
+      const row = await tx.paymentIntent.create({
+        data: {
+          planSnapshot: quote,
+          reference: input.reference,
+          userId: input.userId,
+          purpose: "FINDLOVE",
+          installmentPlanId: input.installmentPlanId,
+          accountType: input.accountType,
+          amountMinor: input.amountMinor,
+          currency: input.currency,
+          paymentMethod: input.paymentMethod,
+          phoneNumber: input.phoneNumber,
+          provider: input.provider,
+          idempotencyKey: input.idempotencyKey,
+          expiresAt: input.expiresAt,
+        },
+        include: { installmentPlan: true },
+      });
+      return toPaymentWithPlanDomain(row);
     });
-    return toPaymentWithPlanDomain(row);
   }
 
   async findPaymentById(id: string): Promise<PaymentIntentWithPlan | null> {
@@ -266,6 +313,7 @@ export class PaymentRepository {
     const row = await this.prisma.paymentIntent.findFirst({
       where: {
         userId: input.userId,
+        provider: { not: "admin_recorded" },
         installmentPlanId: input.installmentPlanId,
         paymentMethod: input.paymentMethod,
         status: { in: [...PENDING_PAYMENT_STATUSES] },
@@ -370,6 +418,13 @@ export class PaymentRepository {
   }): Promise<ServiceSubscription> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const intent = await tx.paymentIntent.findUniqueOrThrow({
+          where: { id: input.payment.id },
+        });
+        const quote = intent.planSnapshot as {
+          plan?: { days: number; tier: string };
+          permissions?: Prisma.InputJsonValue;
+        } | null;
         const existing = await tx.serviceSubscription.findUnique({
           where: { paymentIntentId: input.payment.id },
         });
@@ -389,13 +444,15 @@ export class PaymentRepository {
           where: {
             userId: input.userId,
             service: FINDLOVE_SERVICE,
+            revokedAt: null,
+            startsAt: { lte: input.now },
             expiresAt: { gt: input.now },
           },
           orderBy: { expiresAt: "desc" },
         });
         const expiresAt = subscriptionExpiry(
           input.now,
-          input.plan.durationDays,
+          quote?.plan?.days ?? input.plan.durationDays,
           current?.expiresAt ?? null,
         );
         const created = await tx.serviceSubscription.create({
@@ -406,6 +463,14 @@ export class PaymentRepository {
             installmentPlanId: input.plan.id,
             paymentIntentId: input.payment.id,
             expiresAt,
+            startsAt: input.now,
+            priceMinor: intent.amountMinor,
+            ...(current?.permissionsSnapshot &&
+            current.accountType === input.plan.accountType
+              ? { permissionsSnapshot: current.permissionsSnapshot }
+              : quote?.permissions
+                ? { permissionsSnapshot: quote.permissions }
+                : {}),
           },
         });
         await tx.paymentIntent.update({
@@ -436,6 +501,9 @@ export class PaymentRepository {
       where: {
         userId,
         service: FINDLOVE_SERVICE,
+        revokedAt: null,
+        startsAt: { lte: now },
+        user: { status: "ACTIVE" },
         expiresAt: { gt: now },
       },
       orderBy: { expiresAt: "desc" },

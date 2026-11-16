@@ -1,11 +1,7 @@
 import {
-  logoutRequest,
   refreshRequest,
   type AuthSession,
   type AuthTokens,
-  type LogoutRequest,
-  type OtpRequestResponse,
-  type RefreshRequest,
   type SessionUser,
 } from "@eventis/contracts";
 import {
@@ -18,6 +14,12 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 
+import {
+  logoutRequest,
+  type LogoutRequest,
+  type OtpRequestResponse,
+  type RefreshRequest,
+} from "../../../common/contracts/auth.js";
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
 import { GetMeService } from "../application/get-me.service.js";
 import { LoginService } from "../application/login.service.js";
@@ -28,24 +30,32 @@ import { VerifyOtpService } from "../application/verify-otp.service.js";
 
 import { CurrentUserId, JwtAuthGuard } from "./jwt-auth.guard.js";
 
-const phone = z.string().trim().regex(/^\+[1-9]\d{7,14}$/, "Enter a valid phone number");
-const otpCode = z.string().regex(/^\d{6}$/, "OTP must contain exactly 6 digits");
+const phone = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{7,14}$/, "Enter a valid phone number");
+const otpCode = z
+  .string()
+  .regex(/^\d{6}$/, "OTP must contain exactly 6 digits");
 const pin = z.string().regex(/^\d{5}$/, "PIN must contain exactly 5 digits");
 const verifyOtpRequest = z.object({ phone, code: otpCode, pin });
 const verifySignupRequest = z.object({ phone, code: otpCode });
-const signupRequest = z.object({
-  phone,
-  username: z.string().trim().min(2).max(100).optional(),
-  firstName: z.string().trim().min(2).max(100).optional(),
-  accountType: z.enum(["POSTER", "CUSTOMER"]).default("CUSTOMER"),
-  pin,
-}).refine((value) => Boolean(value.username ?? value.firstName), {
-  message: "username is required",
-  path: ["username"],
-}).transform(({ username, firstName, ...value }) => ({
-  ...value,
-  firstName: username ?? firstName!,
-}));
+const signupRequest = z
+  .object({
+    phone,
+    username: z.string().trim().min(2).max(100).optional(),
+    firstName: z.string().trim().min(2).max(100).optional(),
+    accountType: z.enum(["POSTER", "CUSTOMER"]).default("CUSTOMER"),
+    pin,
+  })
+  .refine((value) => Boolean(value.username ?? value.firstName), {
+    message: "username is required",
+    path: ["username"],
+  })
+  .transform(({ username, firstName, ...value }) => ({
+    ...value,
+    firstName: username ?? firstName!,
+  }));
 const loginRequest = z.object({
   phone,
   pin,
@@ -64,7 +74,7 @@ export class AuthController {
     private readonly logout: LogoutService,
     private readonly getMe: GetMeService,
     private readonly loginService: LoginService,
-  ) { }
+  ) {}
 
   @Post("request-otp")
   async request(

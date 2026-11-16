@@ -53,6 +53,15 @@ export class PaymentWebhookService {
       input.paymentReference,
     );
     if (!payment) throw AppError.notFound("Payment");
+    if (
+      payment.provider === "admin_recorded" ||
+      payment.provider !== this.provider.name
+    )
+      throw AppError.validation({
+        payment_reference: [
+          "This payment does not belong to the webhook provider",
+        ],
+      });
 
     const { event, duplicate } = await this.payments.recordWebhookEvent({
       provider: this.provider.name,

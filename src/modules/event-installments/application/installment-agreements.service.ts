@@ -1,7 +1,6 @@
 import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
-
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   canTransitionAgreement,
@@ -35,7 +34,9 @@ export interface AssignPlanInput {
 
 export interface CustomAgreementInput {
   customerId: string;
-  eventId: string;
+  eventId: string | null;
+  currency?: string;
+  planId?: string | null;
   totalAmountMinor: bigint;
   initialPaymentMinor: bigint;
   interestRateBps: number;
@@ -188,13 +189,13 @@ export class InstallmentAgreementsService {
     const agreement = await this.installments.createAgreement({
       customerId: input.customerId,
       eventId: input.eventId,
-      planId: null,
+      planId: input.planId ?? null,
       totalAmountMinor: terms.totalAmountMinor,
       initialPaymentMinor: terms.initialPaymentMinor,
       interestAmountMinor: terms.interestAmountMinor,
       totalPayableMinor: terms.totalPayableMinor,
       outstandingBalanceMinor: terms.totalPayableMinor,
-      currency: "RWF",
+      currency: input.currency ?? "RWF",
       frequency: input.frequency,
       intervalCount: input.intervalCount,
       installmentCount: input.installmentCount,
@@ -235,10 +236,7 @@ export class InstallmentAgreementsService {
     return agreement;
   }
 
-  async get(
-    actor: AccessUser,
-    id: string,
-  ): Promise<EventInstallmentAgreement> {
+  async get(actor: AccessUser, id: string): Promise<EventInstallmentAgreement> {
     const agreement = await this.installments.findAgreementById(id);
     if (!agreement) throw AppError.notFound("Agreement");
     await this.assertAccess(actor, agreement);
@@ -265,15 +263,15 @@ export class InstallmentAgreementsService {
     }
     const scoped: typeof input = {
       ...input,
-      customerId: input.customerId === actor.userId
-        ? input.customerId
-        : undefined,
+      customerId:
+        input.customerId === actor.userId ? input.customerId : undefined,
       eventId: input.eventId,
     };
     const result = await this.installments.listAgreements(scoped);
     const eventIds = [...new Set(result.items.map((row) => row.eventId))];
     const owned = new Set<string>();
     for (const eventId of eventIds) {
+      if (!eventId) continue;
       const event = await this.installments.findEventById(eventId);
       if (event && event.posterId === actor.userId) {
         owned.add(eventId);
@@ -281,7 +279,8 @@ export class InstallmentAgreementsService {
     }
     const items = result.items.filter(
       (row) =>
-        row.customerId === actor.userId || owned.has(row.eventId),
+        row.customerId === actor.userId ||
+        (row.eventId !== null && owned.has(row.eventId)),
     );
     return { items, total: items.length };
   }
@@ -459,9 +458,10 @@ export class InstallmentAgreementsService {
     return result.items;
   }
 
-  private async validateContext(customerId: string, eventId: string) {
+  private async validateContext(customerId: string, eventId: string | null) {
     const customer = await this.installments.findCustomerById(customerId);
     if (!customer) throw AppError.notFound("Customer");
+    if (eventId === null) return;
     const event = await this.installments.findEventById(eventId);
     if (!event) throw AppError.notFound("Event");
   }
@@ -472,7 +472,9 @@ export class InstallmentAgreementsService {
   ): Promise<void> {
     if (isAdmin(actor)) return;
     if (actor.userId === agreement.customerId) return;
-    const event = await this.installments.findEventById(agreement.eventId);
+    const event = agreement.eventId
+      ? await this.installments.findEventById(agreement.eventId)
+      : null;
     if (event && event.posterId === actor.userId) return;
     throw AppError.forbidden("You do not have access to this agreement");
   }

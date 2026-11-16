@@ -39,7 +39,7 @@ export interface InstallmentPlanWire {
 export interface InstallmentAgreementWire {
   id: string;
   customer_id: string;
-  event_id: string;
+  event_id: string | null;
   plan_id: string | null;
   total_amount_minor: string;
   initial_payment_minor: string;
@@ -164,7 +164,8 @@ export function toInstallmentPlanWire(
     frequency: plan.frequency.toLowerCase() as "weekly" | "monthly" | "yearly",
     interval_count: plan.intervalCount,
     installment_count: plan.installmentCount,
-    initial_payment_type: plan.initialPaymentType.toLowerCase() as "fixed" | "percent",
+    initial_payment_type: plan.initialPaymentType.toLowerCase() as
+      "fixed" | "percent",
     initial_payment_value: toWire(plan.initialPaymentValue),
     interest_rate_bps: plan.interestRateBps,
     late_fee_type: plan.lateFeeType.toLowerCase() as "fixed" | "percent",
@@ -196,7 +197,8 @@ export function toInstallmentAgreementWire(
     late_fees_total_minor: toWire(agreement.lateFeesTotalMinor),
     outstanding_balance_minor: toWire(agreement.outstandingBalanceMinor),
     currency: agreement.currency,
-    frequency: agreement.frequency.toLowerCase() as "weekly" | "monthly" | "yearly",
+    frequency: agreement.frequency.toLowerCase() as
+      "weekly" | "monthly" | "yearly",
     interval_count: agreement.intervalCount,
     installment_count: agreement.installmentCount,
     grace_period_days: agreement.gracePeriodDays,
@@ -298,7 +300,9 @@ export function toInstallmentLateFeeWire(
   };
 }
 
-export function toCustomerWire(customer: InstallmentCustomerSummary): CustomerWire {
+export function toCustomerWire(
+  customer: InstallmentCustomerSummary,
+): CustomerWire {
   return {
     id: customer.id,
     phone: customer.phone,

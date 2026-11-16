@@ -9,20 +9,10 @@
 import { outstandingFor } from "./installment-calculation.js";
 
 export type AgreementStatus =
-  | "DRAFT"
-  | "ACTIVE"
-  | "COMPLETED"
-  | "OVERDUE"
-  | "CANCELLED"
-  | "SUSPENDED";
+  "DRAFT" | "ACTIVE" | "COMPLETED" | "OVERDUE" | "CANCELLED" | "SUSPENDED";
 
 export type ScheduleStatus =
-  | "PENDING"
-  | "PARTIALLY_PAID"
-  | "PAID"
-  | "OVERDUE"
-  | "WAIVED"
-  | "CANCELLED";
+  "PENDING" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "WAIVED" | "CANCELLED";
 
 export interface EventInstallmentSchedule {
   readonly id: string;
@@ -45,7 +35,7 @@ export interface EventInstallmentSchedule {
 export interface EventInstallmentAgreement {
   readonly id: string;
   readonly customerId: string;
-  readonly eventId: string;
+  readonly eventId: string | null;
   readonly planId: string | null;
   readonly totalAmountMinor: bigint;
   readonly initialPaymentMinor: bigint;
@@ -70,7 +60,9 @@ export interface EventInstallmentAgreement {
   readonly updatedAt: Date;
 }
 
-const AGREEMENT_TRANSITIONS: Readonly<Record<AgreementStatus, AgreementStatus[]>> = {
+const AGREEMENT_TRANSITIONS: Readonly<
+  Record<AgreementStatus, AgreementStatus[]>
+> = {
   DRAFT: ["ACTIVE", "CANCELLED"],
   ACTIVE: ["OVERDUE", "SUSPENDED", "CANCELLED", "COMPLETED"],
   OVERDUE: ["ACTIVE", "SUSPENDED", "CANCELLED", "COMPLETED"],
@@ -94,9 +86,7 @@ export function isTerminalAgreementStatus(status: AgreementStatus): boolean {
 /** Schedules a customer is allowed to pay against. */
 export function isPayableSchedule(status: ScheduleStatus): boolean {
   return (
-    status === "PENDING" ||
-    status === "PARTIALLY_PAID" ||
-    status === "OVERDUE"
+    status === "PENDING" || status === "PARTIALLY_PAID" || status === "OVERDUE"
   );
 }
 
@@ -122,7 +112,8 @@ export function agreementStatusForSchedules(
   if (isTerminalAgreementStatus(current)) return current;
 
   const open = schedules.filter(
-    (schedule) => schedule.status !== "WAIVED" && schedule.status !== "CANCELLED",
+    (schedule) =>
+      schedule.status !== "WAIVED" && schedule.status !== "CANCELLED",
   );
   if (open.length === 0) return "COMPLETED";
   const allPaid = open.every((schedule) => schedule.status === "PAID");
@@ -198,9 +189,7 @@ export function isEarlySchedule(
   >,
   targetScheduleId: string,
 ): boolean {
-  const target = schedules.find(
-    (schedule) => schedule.id === targetScheduleId,
-  );
+  const target = schedules.find((schedule) => schedule.id === targetScheduleId);
   if (!target) return false;
   const earlier = schedules.filter(
     (schedule) =>

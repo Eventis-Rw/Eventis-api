@@ -13,7 +13,7 @@ import { computeLateFeeAmount, initialPaymentFor } from "./installment-plan.js";
 const start = new Date("2026-01-15T00:00:00.000Z");
 
 describe("computeAgreementTerms", () => {
-  it("applies simple interest on the financed principal, flooring to minor units", () => {
+  it("applies simple interest on the financed principal, rounding to minor units", () => {
     const terms = computeAgreementTerms({
       totalAmountMinor: 100_000n,
       initialPaymentMinor: 20_000n,
@@ -28,7 +28,7 @@ describe("computeAgreementTerms", () => {
     expect(terms.totalPayableMinor).toBe(104_000n);
   });
 
-  it("floors fractional interest rather than rounding up", () => {
+  it("rounds fractional interest to the nearest minor unit", () => {
     const terms = computeAgreementTerms({
       totalAmountMinor: 10_001n,
       initialPaymentMinor: 0n,
@@ -93,7 +93,7 @@ describe("generateSchedule", () => {
     });
   });
 
-  it("reconciles exactly, absorbing the remainder on the last installment", () => {
+  it("reconciles exactly, distributing the remainder to the earliest installments", () => {
     const rows = generateSchedule({
       totalAmountMinor: 100_000n,
       initialPaymentMinor: 0n,
@@ -105,11 +105,11 @@ describe("generateSchedule", () => {
     });
     const total = rows.reduce((sum, row) => sum + row.amountDueMinor, 0n);
     expect(total).toBe(100_000n + 3_330n);
-    // financed payable 103330 / 3 = 34443.33 → last absorbs the remainder.
+    // financed payable 103330 / 3 = 34443.33 → earliest row gets the remainder.
     expect(rows.map((row) => row.amountDueMinor)).toEqual([
-      34_443n,
-      34_443n,
       34_444n,
+      34_443n,
+      34_443n,
     ]);
   });
 
@@ -265,8 +265,8 @@ describe("plan helpers", () => {
   });
 
   it("returns zero for a non-positive amount due", () => {
-    expect(
-      computeLateFeeAmount({ feeType: "PERCENT", value: 500n }, 0n),
-    ).toBe(0n);
+    expect(computeLateFeeAmount({ feeType: "PERCENT", value: 500n }, 0n)).toBe(
+      0n,
+    );
   });
 });

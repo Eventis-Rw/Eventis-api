@@ -135,6 +135,14 @@ export class PaymentsService {
       }
     }
 
+    const subscription = await this.payments.findActiveSubscription(
+      userId,
+      now,
+    );
+    if (subscription && subscription.accountType !== accountType)
+      throw AppError.validation({
+        account_type: ["Revoke the current membership before switching tiers"],
+      });
     const reference = await this.payments.nextPaymentReference();
     let payment: PaymentIntentWithPlan;
     try {
@@ -233,7 +241,10 @@ export class PaymentsService {
     if (!payment || payment.userId !== userId) {
       throw AppError.notFound("Payment");
     }
-    if (isTerminalPaymentStatus(payment.status)) {
+    if (
+      payment.provider === "admin_recorded" ||
+      isTerminalPaymentStatus(payment.status)
+    ) {
       return toPaymentResponse(payment);
     }
 

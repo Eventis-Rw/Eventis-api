@@ -34,7 +34,9 @@ type Tx = Prisma.TransactionClient;
 type PrismaAgreement = Prisma.EventInstallmentAgreementGetPayload<{
   include: { schedules: true; plan: true; event: true };
 }>;
-type PrismaSchedule = Prisma.EventInstallmentScheduleGetPayload<Record<string, never>>;
+type PrismaSchedule = Prisma.EventInstallmentScheduleGetPayload<
+  Record<string, never>
+>;
 type PrismaPlan = Prisma.EventInstallmentPlanGetPayload<Record<string, never>>;
 type PrismaPayment = Prisma.EventInstallmentPaymentGetPayload<{
   include: {
@@ -44,10 +46,16 @@ type PrismaPayment = Prisma.EventInstallmentPaymentGetPayload<{
   };
 }>;
 type PrismaRefund = Prisma.EventInstallmentRefundGetPayload<{
-  include: { payment: { include: { agreement: { include: { event: true } } } } };
+  include: {
+    payment: { include: { agreement: { include: { event: true } } } };
+  };
 }>;
-type PrismaLateFee = Prisma.EventInstallmentLateFeeGetPayload<Record<string, never>>;
-type PrismaNotification = Prisma.EventInstallmentNotificationGetPayload<Record<string, never>>;
+type PrismaLateFee = Prisma.EventInstallmentLateFeeGetPayload<
+  Record<string, never>
+>;
+type PrismaNotification = Prisma.EventInstallmentNotificationGetPayload<
+  Record<string, never>
+>;
 type PrismaAuditLog = Prisma.EventInstallmentAuditLogGetPayload<{
   include: {
     actor: {
@@ -78,7 +86,6 @@ const UUID_REGEX =
 @Injectable()
 export class EventInstallmentRepository {
   constructor(private readonly prisma: PrismaService) {}
-
 
   async listPlans(input: {
     isActive?: boolean | undefined;
@@ -148,7 +155,6 @@ export class EventInstallmentRepository {
     return toPlanDomain(row);
   }
 
-
   async findEventById(eventId: string): Promise<EventSummary | null> {
     const row = await this.prisma.event.findUnique({
       where: { eventId },
@@ -177,10 +183,9 @@ export class EventInstallmentRepository {
     return row ?? null;
   }
 
-
   async createAgreement(input: {
     customerId: string;
-    eventId: string;
+    eventId: string | null;
     planId: string | null;
     totalAmountMinor: bigint;
     initialPaymentMinor: bigint;
@@ -387,7 +392,6 @@ export class EventInstallmentRepository {
     });
   }
 
-
   async listSchedules(input: {
     page: number;
     limit: number;
@@ -458,9 +462,10 @@ export class EventInstallmentRepository {
     return rows.map(toScheduleDomain);
   }
 
-  async findScheduleWithAgreement(
-    id: string,
-  ): Promise<{ schedule: EventInstallmentSchedule; agreement: EventInstallmentAgreement } | null> {
+  async findScheduleWithAgreement(id: string): Promise<{
+    schedule: EventInstallmentSchedule;
+    agreement: EventInstallmentAgreement;
+  } | null> {
     const row = await this.prisma.eventInstallmentSchedule.findUnique({
       where: { id },
       include: {
@@ -494,7 +499,6 @@ export class EventInstallmentRepository {
       data: { status },
     });
   }
-
 
   async createInstallmentPayment(input: {
     agreementId: string;
@@ -596,9 +600,7 @@ export class EventInstallmentRepository {
       where: { id: installmentPaymentId },
       data: {
         status,
-        ...(transactionReference !== undefined
-          ? { transactionReference }
-          : {}),
+        ...(transactionReference !== undefined ? { transactionReference } : {}),
       },
     });
   }
@@ -759,7 +761,6 @@ export class EventInstallmentRepository {
     ]);
     return { items: rows.map(toPaymentDomain), total };
   }
-
 
   async createRefund(input: {
     installmentPaymentId: string;
@@ -938,7 +939,6 @@ export class EventInstallmentRepository {
     return { rejected: true, refund };
   }
 
-
   async applyLateFee(input: {
     agreementId: string;
     scheduleId: string;
@@ -1039,7 +1039,11 @@ export class EventInstallmentRepository {
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.eventInstallmentLateFee.updateMany({
         where: { id: input.lateFeeId, status: "APPLIED" },
-        data: { status: "WAIVED", waivedAt: input.now, waivedBy: input.waivedBy },
+        data: {
+          status: "WAIVED",
+          waivedAt: input.now,
+          waivedBy: input.waivedBy,
+        },
       });
       if (claimed.count === 0) {
         return { waived: false, lateFee: null };
@@ -1104,7 +1108,6 @@ export class EventInstallmentRepository {
     ]);
     return { items: rows.map(toLateFeeDomain), total };
   }
-
 
   async sweepOverdueSchedules(input: {
     now: Date;
@@ -1179,7 +1182,6 @@ export class EventInstallmentRepository {
 
     return { markedOverdue, lateFeesApplied, notificationsCreated };
   }
-
 
   async createNotification(input: {
     customerId: string;
@@ -1268,7 +1270,6 @@ export class EventInstallmentRepository {
     });
   }
 
-
   async createAuditLog(input: {
     actorId: string | null;
     action: string;
@@ -1299,7 +1300,10 @@ export class EventInstallmentRepository {
     limit: number;
     entityType?: string | undefined;
     entityId?: string | undefined;
-  }): Promise<{ items: Array<EventInstallmentAuditLog & { actor: CustomerSummary | null }>; total: number }> {
+  }): Promise<{
+    items: Array<EventInstallmentAuditLog & { actor: CustomerSummary | null }>;
+    total: number;
+  }> {
     const where: Prisma.EventInstallmentAuditLogWhereInput = {
       ...(input.entityType ? { entityType: input.entityType } : {}),
       ...(input.entityId ? { entityId: input.entityId } : {}),
@@ -1325,11 +1329,13 @@ export class EventInstallmentRepository {
       this.prisma.eventInstallmentAuditLog.count({ where }),
     ]);
     return {
-      items: rows.map((row) => ({ ...toAuditLogDomain(row), actor: row.actor })),
+      items: rows.map((row) => ({
+        ...toAuditLogDomain(row),
+        actor: row.actor,
+      })),
       total,
     };
   }
-
 
   async reportSummary(input: {
     createdFrom?: Date | undefined;
@@ -1430,7 +1436,10 @@ export class EventInstallmentRepository {
     to: Date;
     customerId?: string | undefined;
   }): Promise<
-    Array<{ schedule: EventInstallmentSchedule; agreement: EventInstallmentAgreement }>
+    Array<{
+      schedule: EventInstallmentSchedule;
+      agreement: EventInstallmentAgreement;
+    }>
   > {
     const rows = await this.prisma.eventInstallmentSchedule.findMany({
       where: {
@@ -1452,7 +1461,6 @@ export class EventInstallmentRepository {
       agreement: toAgreementDomain(row.agreement),
     }));
   }
-
 
   /**
    * Recomputes every schedule status and the agreement balances from the
@@ -1498,7 +1506,11 @@ export class EventInstallmentRepository {
         scheduleRow.amountPaidMinor,
         scheduleRow.refundedAmountMinor,
       );
-      const overdue = isScheduleOverdue(scheduleRow, agreementRow.gracePeriodDays, now);
+      const overdue = isScheduleOverdue(
+        scheduleRow,
+        agreementRow.gracePeriodDays,
+        now,
+      );
       const nextStatus: ScheduleStatus =
         outstanding <= 0n
           ? "PAID"
@@ -1538,10 +1550,7 @@ export class EventInstallmentRepository {
       }
     }
 
-    const status = agreementStatusForSchedules(
-      schedules,
-      agreementRow.status,
-    );
+    const status = agreementStatusForSchedules(schedules, agreementRow.status);
 
     const updated = await tx.eventInstallmentAgreement.update({
       where: { id: agreementId },
@@ -1573,6 +1582,7 @@ type InstallmentNotificationStatusList = Array<"PENDING" | "SENT" | "FAILED">;
 function toPlanDomain(row: PrismaPlan): EventInstallmentPlan {
   return {
     id: row.id,
+    adminTerms: row.adminTerms,
     name: row.name,
     description: row.description,
     frequency: row.frequency,
@@ -1724,7 +1734,10 @@ function toAuditLogDomain(row: PrismaAuditLog): EventInstallmentAuditLog {
     action: row.action,
     entityType: row.entityType,
     entityId: row.entityId,
-    previousValues: (row.previousValues ?? null) as Record<string, unknown> | null,
+    previousValues: (row.previousValues ?? null) as Record<
+      string,
+      unknown
+    > | null,
     newValues: row.newValues as Record<string, unknown>,
     reason: row.reason,
     createdAt: row.createdAt,
