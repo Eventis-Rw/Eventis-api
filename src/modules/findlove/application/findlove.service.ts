@@ -23,6 +23,8 @@ import {
   toLoveProfileResponse,
 } from "../mappers/findlove.mapper.js";
 
+import { FindLoveNotificationService } from "./findlove-notification.service.js";
+
 const MIN_AGE = 18;
 
 @Injectable()
@@ -31,6 +33,7 @@ export class FindLoveService {
     private readonly findlove: FindLoveRepository,
     private readonly clock: Clock,
     private readonly storage: StorageService,
+    private readonly notifications: FindLoveNotificationService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -359,10 +362,19 @@ export class FindLoveService {
     if (!reciprocal) {
       return { liked: true, matched: false, connectionId: null };
     }
+    const before = await this.findlove.findConnectionBetween(profile.id, target.id);
     const connection = await this.findlove.upsertAcceptedConnection(
       profile.id,
       target.id,
     );
+    // The liker sees the match in the reply; tell the other member.
+    if (before?.status !== "ACCEPTED") {
+      await this.notifications.matched({
+        userId: target.userId,
+        other: profile,
+        connectionId: connection.id,
+      });
+    }
     return {
       liked: true,
       matched: true,
@@ -403,6 +415,12 @@ export class FindLoveService {
       fromProfileId: profile.id,
       toProfileId: target.id,
       message: input.message?.trim() || null,
+    });
+    await this.notifications.requestReceived({
+      recipientUserId: target.userId,
+      sender: profile,
+      connectionId: connection.id,
+      note: connection.message,
     });
     return {
       connection: this.presentConnection(
@@ -460,6 +478,13 @@ export class FindLoveService {
       status,
       status === "REMOVED" ? null : this.clock.now(),
     );
+    if (status === "ACCEPTED") {
+      await this.notifications.requestAccepted({
+        senderUserId: connection.fromProfile.userId,
+        accepter: profile,
+        connectionId: connection.id,
+      });
+    }
     return { connection: this.presentConnection(row, profile.id) };
   }
 

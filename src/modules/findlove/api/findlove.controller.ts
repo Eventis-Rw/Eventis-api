@@ -30,6 +30,8 @@ import {
 } from "../../../common/guards/auth.guard.js";
 import { RolesGuard } from "../../../common/guards/roles.guard.js";
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
+import { FindLoveChatService } from "../application/findlove-chat.service.js";
+import { FindLoveNotificationService } from "../application/findlove-notification.service.js";
 import { FindLoveService } from "../application/findlove.service.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -98,11 +100,30 @@ const connectionListSchema = z.object({
 const connectionResponseSchema = z.object({
   status: z.enum(["ACCEPTED", "DECLINED", "REMOVED"]),
 });
+const chatParamSchema = z.object({ profileId: z.string().uuid() });
+const notificationsQuerySchema = pageSchema.extend({
+  unreadOnly: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+});
+const chatMessagesQuerySchema = z.object({
+  before: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const chatMessageSchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+  clientMessageId: z.string().trim().min(1).max(80).optional(),
+});
 
 @Controller({ path: "findlove", version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
 export class FindLoveController {
-  constructor(private readonly findlove: FindLoveService) {}
+  constructor(
+    private readonly findlove: FindLoveService,
+    private readonly chats: FindLoveChatService,
+    private readonly notifications: FindLoveNotificationService,
+  ) {}
 
   @Post("age-verification")
   submitAgeVerification(
@@ -265,6 +286,64 @@ export class FindLoveController {
       params.id,
       body.status,
     );
+  }
+
+  @Get("chats")
+  listChats(@CurrentUser() user: AuthenticatedUser | undefined) {
+    return this.chats.listChats(requireUser(user).userId);
+  }
+
+  @Get("chats/:profileId/messages")
+  listChatMessages(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Param(zodPipe(chatParamSchema)) params: z.infer<typeof chatParamSchema>,
+    @Query(zodPipe(chatMessagesQuerySchema))
+    query: z.infer<typeof chatMessagesQuerySchema>,
+  ) {
+    return this.chats.listMessages(requireUser(user).userId, params.profileId, query);
+  }
+
+  @Post("chats/:profileId/messages")
+  sendChatMessage(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Param(zodPipe(chatParamSchema)) params: z.infer<typeof chatParamSchema>,
+    @Body(zodPipe(chatMessageSchema)) body: z.infer<typeof chatMessageSchema>,
+  ) {
+    return this.chats.sendMessage(requireUser(user).userId, params.profileId, body);
+  }
+
+  @Post("chats/:profileId/read")
+  @HttpCode(200)
+  markChatRead(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Param(zodPipe(chatParamSchema)) params: z.infer<typeof chatParamSchema>,
+  ) {
+    return this.chats.markRead(requireUser(user).userId, params.profileId);
+  }
+
+  @Get("notifications")
+  listNotifications(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Query(zodPipe(notificationsQuerySchema))
+    query: z.infer<typeof notificationsQuerySchema>,
+  ) {
+    return this.notifications.list(requireUser(user).userId, query);
+  }
+
+  // Declared before ":id/read" so "read-all" is never taken for an id.
+  @Post("notifications/read-all")
+  @HttpCode(200)
+  markAllNotificationsRead(@CurrentUser() user: AuthenticatedUser | undefined) {
+    return this.notifications.markAllRead(requireUser(user).userId);
+  }
+
+  @Post("notifications/:id/read")
+  @HttpCode(200)
+  markNotificationRead(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>,
+  ) {
+    return this.notifications.markRead(requireUser(user).userId, params.id);
   }
 }
 
