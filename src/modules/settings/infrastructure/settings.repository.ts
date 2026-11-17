@@ -139,7 +139,9 @@ export class SettingsRepository {
     const where: Prisma.NotificationWhereInput = {
       userId: params.userId,
       ...(params.unreadOnly ? { readAt: null } : {}),
-      ...(params.category ? { category: params.category } : {}),
+      // FindLove activity has its own feed (/findlove/notifications); it only
+      // appears here when asked for by category.
+      category: params.category ?? { not: "FINDLOVE" },
     };
     const [items, total] = await Promise.all([
       this.prisma.notification.findMany({
@@ -173,7 +175,8 @@ export class SettingsRepository {
     readAt: Date,
   ): Promise<number> {
     const result = await this.prisma.notification.updateMany({
-      where: { userId, readAt: null },
+      // Matches the general feed: FindLove items are marked read in their own feed.
+      where: { userId, readAt: null, category: { not: "FINDLOVE" } },
       data: { readAt },
     });
     return result.count;

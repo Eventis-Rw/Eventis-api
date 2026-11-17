@@ -10,8 +10,12 @@ import { PlatformModule } from "../platform/index.js";
 import { AdminMembershipController } from "./api/admin-membership.controller.js";
 import { FindLoveController } from "./api/findlove.controller.js";
 import { AdminMembershipService } from "./application/admin-membership.service.js";
+import { FindLoveChatService } from "./application/findlove-chat.service.js";
+import { FindLoveNotificationService } from "./application/findlove-notification.service.js";
 import { FindLoveService } from "./application/findlove.service.js";
 import { AdminMembershipRepository } from "./infrastructure/admin-membership.repository.js";
+import { FindLoveChatRepository } from "./infrastructure/findlove-chat.repository.js";
+import { FindLoveNotificationRepository } from "./infrastructure/findlove-notification.repository.js";
 import { FindLoveRepository } from "./infrastructure/findlove.repository.js";
 
 @Module({
@@ -24,6 +28,10 @@ import { FindLoveRepository } from "./infrastructure/findlove.repository.js";
     FindLoveRepository,
     AdminMembershipService,
     AdminMembershipRepository,
+    FindLoveChatService,
+    FindLoveChatRepository,
+    FindLoveNotificationService,
+    FindLoveNotificationRepository,
   ],
   exports: [FindLoveService],
 })
