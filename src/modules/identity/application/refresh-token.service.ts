@@ -1,7 +1,8 @@
-import { ERROR_CODES, type AuthTokens, type RefreshRequest } from "@eventis/contracts";
+import { ERROR_CODES, type AuthTokens } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
+import type { RefreshRequest } from "../../../common/contracts/auth.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { isRefreshReusable, isRefreshReuse } from "../domain/user.js";
 import {
@@ -9,7 +10,7 @@ import {
   UserRepository,
 } from "../infrastructure/identity.repository.js";
 import { TokenService } from "../infrastructure/token.service.js";
-import { toAuthTokens } from "../mappers/auth.mapper.js";
+import { toAuthRoles, toAuthTokens } from "../mappers/auth.mapper.js";
 
 @Injectable()
 export class RefreshTokenService {
@@ -63,7 +64,8 @@ export class RefreshTokenService {
 
     const access = await this.tokens.issueAccessToken({
       sub: user.id,
-      role: user.accountType === "POSTER" ? "organizer_owner" : "customer",
+      role: toAuthRoles(user)[0] ?? "customer",
+      roles: toAuthRoles(user),
     });
 
     return toAuthTokens({

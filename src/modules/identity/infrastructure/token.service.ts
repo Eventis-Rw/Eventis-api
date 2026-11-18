@@ -14,6 +14,7 @@ import {
 export interface AccessTokenClaims {
   sub: string;
   role?: string;
+  roles?: string[];
 }
 
 export interface IssuedAccessToken {
@@ -76,9 +77,14 @@ export class TokenService {
       now.getTime() + this.env.JWT_ACCESS_TTL_SECONDS * 1000,
     );
 
+    const roles = [
+      ...new Set(
+        claims.roles?.length ? claims.roles : [claims.role ?? "customer"],
+      ),
+    ];
     const token = await new SignJWT({
-      role: claims.role ?? "customer",
-      roles: [claims.role ?? "customer"],
+      role: claims.role ?? roles[0] ?? "customer",
+      roles,
     })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(claims.sub)
@@ -100,8 +106,16 @@ export class TokenService {
       if (typeof payload.sub !== "string" || !payload.sub) {
         throw AppError.unauthenticated();
       }
-      const role = typeof payload.role === "string" ? payload.role : "customer";
-      return { sub: payload.sub, role };
+      const roles = Array.isArray(payload.roles)
+        ? payload.roles.filter(
+            (role): role is string => typeof role === "string",
+          )
+        : [];
+      const role =
+        typeof payload.role === "string"
+          ? payload.role
+          : (roles[0] ?? "customer");
+      return { sub: payload.sub, role, roles: roles.length ? roles : [role] };
     } catch (error) {
       if (error instanceof AppError) throw error;
       if (error instanceof JoseErrors.JWTExpired) {

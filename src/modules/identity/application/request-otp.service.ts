@@ -1,10 +1,8 @@
-import {
-  ERROR_CODES,
-  type OtpRequestResponse,
-} from "@eventis/contracts";
+import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
+import type { OtpRequestResponse } from "../../../common/contracts/auth.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   OTP_DAILY_LIMIT_PER_PHONE,
@@ -18,7 +16,10 @@ import {
   normalizeRwandaPhone,
   PhoneNormalizationError,
 } from "../domain/phone.js";
-import { OtpRepository, UserRepository  } from "../infrastructure/identity.repository.js";
+import {
+  OtpRepository,
+  UserRepository,
+} from "../infrastructure/identity.repository.js";
 import {
   SMS_PROVIDER,
   buildOtpSmsMessage,
@@ -34,16 +35,14 @@ export class RequestOtpService {
     private readonly tokens: TokenService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     private readonly clock: Clock,
-  ) { }
+  ) {}
 
-  async execute(
-    input: {
-      phone: string;
-      firstName?: string;
-      accountType?: "POSTER" | "CUSTOMER";
-      pin?: string;
-    },
-  ): Promise<OtpRequestResponse> {
+  async execute(input: {
+    phone: string;
+    firstName?: string;
+    accountType?: "POSTER" | "CUSTOMER";
+    pin?: string;
+  }): Promise<OtpRequestResponse> {
     let phone: string;
     try {
       phone = normalizeRwandaPhone(input.phone);

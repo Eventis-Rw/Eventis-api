@@ -22,6 +22,7 @@ import {
 } from "../infrastructure/identity.repository.js";
 import { TokenService } from "../infrastructure/token.service.js";
 import {
+  toAuthRoles,
   toAuthSession,
   toAuthTokens,
   type AuthSessionResponse,
@@ -133,12 +134,8 @@ export class VerifyOtpService {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (
-        message === "user inactive"
-      ) {
-        throw AppError.forbidden(
-          "This account is inactive",
-        );
+      if (message === "user inactive") {
+        throw AppError.forbidden("This account is inactive");
       }
       if (message === "phone already registered") {
         throw new AppError(
@@ -159,11 +156,8 @@ export class VerifyOtpService {
 
     const access = await this.tokens.issueAccessToken({
       sub: result.user.id,
-      role: result.user.role === "ADMIN"
-        ? "admin"
-        : result.user.accountType === "POSTER"
-          ? "organizer_owner"
-          : "customer",
+      role: toAuthRoles(result.user)[0] ?? "customer",
+      roles: toAuthRoles(result.user),
     });
 
     return toAuthSession({

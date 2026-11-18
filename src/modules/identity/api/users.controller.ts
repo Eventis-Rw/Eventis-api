@@ -28,6 +28,8 @@ const nullableProfileFields = new Set([
   "bio",
   "location",
   "interestedIn",
+  "username",
+  "termsVersion",
 ]);
 
 interface ProfileAvatarFile {

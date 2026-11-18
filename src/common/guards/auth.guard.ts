@@ -9,6 +9,7 @@ import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
 
 import { ENV, type Env } from "../../config/env.js";
+import { PrismaService } from "../../infrastructure/database/prisma.service.js";
 import { verifyJwt } from "../auth/jwt.util.js";
 import { AppError } from "../errors/app-error.js";
 
@@ -36,9 +37,10 @@ export class AuthGuard implements CanActivate {
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly reflector: Reflector,
+    private readonly prisma: PrismaService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -70,13 +72,24 @@ export class AuthGuard implements CanActivate {
       throw AppError.unauthenticated("Invalid or expired authentication token");
     }
 
-    const roles = payload.roles ?? (payload.role ? [payload.role] : ["customer"]);
-    request.user = {
-      userId,
-      ...(payload.phone ? { phone: payload.phone } : {}),
-      role: payload.role ?? roles[0] ?? "customer",
-      roles,
-    };
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        phone: true,
+        role: true,
+        accountType: true,
+        status: true,
+        deletedAt: true,
+      },
+    });
+    if (!account || account.deletedAt || account.status !== "ACTIVE")
+      throw AppError.unauthenticated("This account is no longer active");
+    // Role and account restrictions take effect immediately, even for unexpired JWTs.
+    const roles: string[] = [];
+    if (account.role === "ADMIN") roles.push("admin");
+    if (account.accountType === "POSTER") roles.push("organizer_owner");
+    if (!roles.length) roles.push("customer");
+    request.user = { userId, phone: account.phone, role: roles[0]!, roles };
 
     return true;
   }

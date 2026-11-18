@@ -30,7 +30,7 @@ Mobile App / Web App / Website
 One API deployable. One database. Workers are the same Docker image with a different
 command.
 
-## The four flows, and nothing else
+## Core event flows
 
 ```
 LISTING     organizer registers, gets verified, publishes an event
@@ -42,17 +42,22 @@ TICKETING   user reserves (free) or buys (paid), gets a signed QR ticket
 CHECK-IN    gate staff scans the QR at the venue, offline-capable
 ```
 
-**Explicitly out of scope, permanently**: chat, dating, wallets, tokens, gifting,
-live video, recommendation ML, social feeds.
+Chat is implemented as a separate capability from these core event flows. See
+[the chat flow guide](../guides/chat-flow.md) for its REST, Socket.IO, persistence,
+and attachment behavior. FindLove subscription payments are implemented directly through mobile money;
+wallets, tokens, gifting, live video transport,
+recommendation ML, and social feeds are not part of the core event flows.
 
 ## Implemented today
 
-| Module     | Status                                       |
-| ---------- | -------------------------------------------- |
-| `platform` | Health probes, shared clock                  |
-| `events`   | **Reference module** — create / get / update |
+| Module     | Status                                                                                |
+| ---------- | ------------------------------------------------------------------------------------- |
+| `platform` | Health probes, shared clock                                                           |
+| `events`   | **Reference module** — create / get / update                                          |
+| `chat`     | Conversations, messages, receipts, invitations, attachments, and call signaling       |
+| `payments` | FindLove installment plans, direct MTN/Airtel collections, webhooks and subscriptions |
 
-Everything else is planned. Do not create empty module folders — follow
+Other domain modules are planned. Do not create empty module folders — follow
 [adding a module](../guides/adding-a-module.md) when you start one.
 
 ## Planned modules
@@ -70,7 +75,6 @@ These modules will follow the same architecture demonstrated by `events`:
 | `discovery`     | Search, filtering, location-based discovery (PostGIS) |
 | `ticketing`     | Ticket types, inventory, issuance and validation      |
 | `orders`        | Customer orders and order lifecycle                   |
-| `payments`      | Payment provider integration                          |
 | `ledger`        | Financial accounting and double-entry ledger          |
 | `checkin`       | Ticket scanning and attendance                        |
 | `notifications` | SMS, push notifications and email                     |

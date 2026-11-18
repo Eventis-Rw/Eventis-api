@@ -10,7 +10,6 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { AppError } from "../errors/app-error.js";
 
-
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -47,12 +46,31 @@ export class AllExceptionsFilter implements ExceptionFilter {
     exception: unknown,
     requestId: string,
   ): { status: number; body: ApiError } {
+    if (
+      exception instanceof Error &&
+      exception.name === "PolicyViolationError" &&
+      "code" in exception &&
+      typeof exception.code === "string"
+    ) {
+      return {
+        status: 403,
+        body: {
+          code: exception.code as ApiError["code"],
+          message: exception.message,
+          requestId,
+        },
+      };
+    }
+
     if (exception instanceof AppError) {
       return {
         status: exception.status,
         body: {
           code: exception.code,
-          message: exception.message,
+          message: exception.options.fields
+            ? (Object.values(exception.options.fields).flat()[0] ??
+              exception.message)
+            : exception.message,
           requestId,
           ...(exception.options.fields
             ? { fields: exception.options.fields }

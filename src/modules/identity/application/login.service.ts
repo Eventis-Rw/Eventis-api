@@ -9,7 +9,11 @@ import {
 } from "../domain/phone.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";
 import { TokenService } from "../infrastructure/token.service.js";
-import { toAuthSession, toAuthTokens } from "../mappers/auth.mapper.js";
+import {
+  toAuthRoles,
+  toAuthSession,
+  toAuthTokens,
+} from "../mappers/auth.mapper.js";
 import type { AuthSessionResponse } from "../mappers/auth.mapper.js";
 
 @Injectable()
@@ -56,11 +60,8 @@ export class LoginService {
     });
     const access = await this.tokens.issueAccessToken({
       sub: user.id,
-      role: user.role === "ADMIN"
-        ? "admin"
-        : user.accountType === "POSTER"
-          ? "organizer_owner"
-          : "customer",
+      role: toAuthRoles(user)[0] ?? "customer",
+      roles: toAuthRoles(user),
     });
     return toAuthSession({
       user,
