@@ -30,7 +30,7 @@ async function bootstrap(): Promise<void> {
     trustProxy: true,
     genReqId: (req: IncomingMessage) =>
       (req.headers[REQUEST_ID_HEADER] as string | undefined) ?? randomUUID(),
-    bodyLimit: 6 * 1024 * 1024,
+    bodyLimit: 12 * 1024 * 1024,
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(

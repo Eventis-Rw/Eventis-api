@@ -51,6 +51,12 @@ export class AnalyticsRepository {
           createdAt: input.now,
         },
       });
+      if (input.type === "VIEW") {
+        await tx.event.update({
+          where: { eventId: input.eventId },
+          data: { viewsCount: { increment: 1 } },
+        });
+      }
       await tx.eventStatDaily.upsert({
         where: { eventId_date: { eventId: input.eventId, date } },
         create: {
@@ -89,6 +95,7 @@ export class AnalyticsRepository {
       shares: number;
       websiteClicks: number;
     }>;
+    sources: Array<{ source: string | null; impressions: number; views: number }>;
   }> {
     if (!input.eventIds.length) {
       return {
@@ -97,9 +104,10 @@ export class AnalyticsRepository {
         savedEvents: 0,
         byEvent: [],
         daily: [],
+        sources: [],
       };
     }
-    const [grouped, events, saves, daily] = await Promise.all([
+    const [grouped, events, saves, daily, sourceGroups] = await Promise.all([
       this.prisma.analyticsEvent.groupBy({
         by: ["eventId", "type"],
         where: {
@@ -122,6 +130,14 @@ export class AnalyticsRepository {
           eventId: { in: input.eventIds },
           date: { gte: startOfDay(input.from), lte: endOfDay(input.to) },
         },
+      }),
+      this.prisma.analyticsEvent.groupBy({
+        by: ["source", "type"],
+        where: {
+          eventId: { in: input.eventIds },
+          createdAt: { gte: input.from, lte: input.to },
+        },
+        _count: { _all: true },
       }),
     ]);
 
@@ -191,6 +207,15 @@ export class AnalyticsRepository {
       dailyMap.set(key, existing);
     }
 
+    const sourceMap = new Map<string | null, { impressions: number; views: number }>();
+    for (const row of sourceGroups) {
+      if (row.type !== "IMPRESSION" && row.type !== "VIEW") continue;
+      const counts = sourceMap.get(row.source) ?? { impressions: 0, views: 0 };
+      if (row.type === "IMPRESSION") counts.impressions = row._count._all;
+      if (row.type === "VIEW") counts.views = row._count._all;
+      sourceMap.set(row.source, counts);
+    }
+
     return {
       totals,
       eventViews,
@@ -202,6 +227,10 @@ export class AnalyticsRepository {
       daily: [...dailyMap.values()].sort(
         (a, b) => a.date.getTime() - b.date.getTime(),
       ),
+      sources: [...sourceMap.entries()].map(([source, counts]) => ({
+        source,
+        ...counts,
+      })),
     };
   }
 }

@@ -1,7 +1,10 @@
 import { Injectable } from "@nestjs/common";
 
 import { AppError } from "../../../common/errors/app-error.js";
-import { StorageService } from "../../../infrastructure/storage/storage.service.js";
+import {
+  MAX_EVENT_COVER_SIZE,
+  StorageService,
+} from "../../../infrastructure/storage/storage.service.js";
 import { applyEventUpdate, type EventStatus } from "../domain/event.js";
 import { EventRepository } from "../infrastructure/event.repository.js";
 
@@ -57,7 +60,7 @@ export class UpdateEventService {
     }
 
     if (input.coverFile) {
-      this.storage.validateImage(input.coverFile);
+      this.storage.validateImage(input.coverFile, "cover_image", MAX_EVENT_COVER_SIZE);
     }
 
     let uploadedCover: string | null = null;

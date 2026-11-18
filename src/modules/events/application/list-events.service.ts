@@ -29,4 +29,14 @@ export class ListEventsService {
       status,
     });
   }
+
+  async executeForOwner(posterId: string, input: ListEventsInput) {
+    return this.events.list({
+      page: input.page,
+      limit: input.limit,
+      category: input.category,
+      search: input.search,
+      posterId,
+    });
+  }
 }

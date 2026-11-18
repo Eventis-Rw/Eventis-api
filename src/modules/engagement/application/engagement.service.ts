@@ -24,6 +24,11 @@ export class EngagementService {
     private readonly clock: Clock,
   ) {}
 
+  async createUpcomingEventReminders(now = this.clock.now()): Promise<number> {
+    const targetDate = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    return this.repository.createSavedEventReminders(targetDate);
+  }
+
   async saveEvent(userId: string, eventId: string) {
     if (!(await this.repository.eventExists(eventId))) {
       throw AppError.notFound("That event");

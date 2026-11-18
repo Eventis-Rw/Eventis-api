@@ -1036,6 +1036,7 @@ model Notification {
   title     String               @db.VarChar(160)
   body      String               @db.Text
   data      Json                 @default("{}")
+  dedupeKey String?              @map("dedupe_key") @db.VarChar(160)
   readAt    DateTime?            @map("read_at") @db.Timestamptz(6)
   createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -1043,6 +1044,7 @@ model Notification {
 
   @@index([userId, readAt, createdAt], map: "notifications_user_read_idx")
   @@index([userId, createdAt], map: "notifications_user_created_idx")
+  @@unique([userId, dedupeKey], map: "notifications_user_dedupe_key")
   @@map("notifications")
 }
 
