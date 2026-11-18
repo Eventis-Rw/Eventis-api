@@ -352,6 +352,11 @@ export class ChatController {
     return this.chat.createCall(userId, body.conversationId, body.type);
   }
 
+  @Get("calls/ice-servers")
+  getCallIceServers(@CurrentUserId() userId: string) {
+    return this.chat.getCallIceServers(userId);
+  }
+
   @Patch("calls/:id")
   updateCall(
     @CurrentUserId() userId: string,

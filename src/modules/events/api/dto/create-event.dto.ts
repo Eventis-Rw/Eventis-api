@@ -23,7 +23,11 @@ const optionalNumber = (min: number, max: number) =>
 
 const optionalInteger = (min: number, max: number) =>
   z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
+    (val) => {
+      if (val === "null") return null;
+      if (val === "" || val === undefined) return undefined;
+      return val;
+    },
     z.coerce.number().int().min(min).max(max).nullable().optional(),
   );
 

@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Server } from "socket.io";
@@ -258,7 +260,7 @@ export class ChatService {
     );
     return {
       items: result.items.map((item) =>
-        toConversationResponse(item, profileMap),
+        this.withPresence(toConversationResponse(item, profileMap)),
       ),
       page: input.page,
       limit: input.limit,
@@ -969,6 +971,29 @@ export class ChatService {
     return toCallResponse(call);
   }
 
+  getCallIceServers(userId: string) {
+    const stunUrls = (this.env.CALL_STUN_URLS ?? "stun:stun.l.google.com:19302")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const iceServers: Array<Record<string, unknown>> = stunUrls.length
+      ? [{ urls: stunUrls }]
+      : [];
+    const turnUrls = (this.env.CALL_TURN_URLS ?? "")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const turnSecret = this.env.CALL_TURN_SHARED_SECRET;
+    if (turnUrls.length && turnSecret) {
+      const expiresAt = Math.floor(this.clock.now().getTime() / 1000) + 3600;
+      const username = `${expiresAt}:${userId}`;
+      const credential = createHmac("sha1", turnSecret).update(username).digest("base64");
+      iceServers.push({ urls: turnUrls, username, credential });
+      return { iceServers, expiresAt };
+    }
+    return { iceServers, expiresAt: null };
+  }
+
   async transitionCall(userId: string, callId: string, status: CallStatus) {
     const call = await this.chat.findCallById(callId);
     if (!call) throw AppError.notFound("Call");
@@ -1189,12 +1214,26 @@ export class ChatService {
     const profiles = await this.users.byIds(
       conversation.participants.map((p) => p.userId),
     );
-    return toConversationResponse(
-      conversation,
-      new Map(
-        profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
+    return this.withPresence(
+      toConversationResponse(
+        conversation,
+        new Map(
+          profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
+        ),
       ),
     );
+  }
+
+  private withPresence<T extends { participants: { userId: string }[] }>(
+    conversation: T,
+  ) {
+    return {
+      ...conversation,
+      participants: conversation.participants.map((participant) => ({
+        ...participant,
+        isOnline: this.realtime.isOnline(participant.userId),
+      })),
+    };
   }
 
   private async requireConversation(userId: string, conversationId: string) {

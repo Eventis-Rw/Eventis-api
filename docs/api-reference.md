@@ -94,10 +94,26 @@ picker:
 
 In Swagger, click **Try it out**, choose a local file, and execute the request.
 In Postman, choose **Body → form-data**, enter the other fields as text, set
-`cover_image` or `avatar_image` to **File**, and select the image. JPEG, PNG,
-and WebP files up to 5 MiB are validated. The configured storage provider
-uploads the bytes, and the generated URL is returned in the event
-`cover_image` or profile `avatarUrl` response field.
+`cover_image` or `avatar_image` to **File**, and select the image. Event covers
+accept JPEG, PNG, WebP, GIF, AVIF, HEIC/HEIF, BMP, or TIFF up to 10 MiB and are
+stored in Cloudinary. Profile photos accept JPEG, PNG, or WebP up to 5 MiB and
+use the configured object storage provider. The generated URL is returned in
+the event `cover_image` or profile `avatarUrl` response field.
+
+## Event analytics
+
+- `POST /api/v1/events/{id}/analytics` records an event impression, view, click,
+  save, share, or website click. Authentication is optional; authenticated
+  activity is associated with the account. The `source` field may identify
+  `home`, `category`, `search`, `details`, `stories`, or `direct`.
+- `GET /api/v1/me/analytics/overview?from=...&to=...` returns account-wide
+  event totals, daily counts, source breakdowns, and per-event results. It
+  requires an organizer owner or admin account. Event view and current save
+  totals are read from the event and saved-event records; activity breakdowns
+  reflect analytics recorded during the requested period.
+
+Story viewing, booking, ticket sales, attendance, and revenue are not included
+in these analytics results.
 
 ## Chat and messaging
 

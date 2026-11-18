@@ -67,8 +67,11 @@ export class EventRepository {
     category?: string | undefined;
     search?: string | undefined;
     status?: EventStatus | undefined;
+    posterId?: string | undefined;
   }): Promise<{ items: Event[]; total: number }> {
-    const where: Prisma.EventWhereInput = {};
+    const where: Prisma.EventWhereInput = params.posterId
+      ? { posterId: params.posterId }
+      : {};
 
     if (params.status) {
       where.status = params.status;

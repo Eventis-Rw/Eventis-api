@@ -73,6 +73,11 @@ const envSchema = z
     /** @deprecated Prefer AT_API_KEY. Kept so older .env files still boot. */
     SMS_API_KEY: optionalString,
 
+    /** Optional public STUN hosts and coturn shared-secret credentials for calls. */
+    CALL_STUN_URLS: optionalString,
+    CALL_TURN_URLS: optionalString,
+    CALL_TURN_SHARED_SECRET: optionalString,
+
     SENTRY_DSN: optionalString,
   })
 

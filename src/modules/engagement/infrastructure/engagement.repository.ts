@@ -67,6 +67,41 @@ export interface EventReportRow {
 export class EngagementRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  async createSavedEventReminders(targetDate: Date): Promise<number> {
+    const from = new Date(
+      Date.UTC(
+        targetDate.getUTCFullYear(),
+        targetDate.getUTCMonth(),
+        targetDate.getUTCDate(),
+      ),
+    );
+    const until = new Date(from.getTime() + 24 * 60 * 60 * 1000);
+    const saved = await this.prisma.savedEvent.findMany({
+      where: {
+        event: { status: "published", startDate: { gte: from, lt: until } },
+      },
+      select: {
+        userId: true,
+        eventId: true,
+        event: { select: { title: true, location: true } },
+      },
+    });
+    if (!saved.length) return 0;
+    const created = await this.prisma.notification.createMany({
+      data: saved.map((entry) => ({
+        userId: entry.userId,
+        category: "EVENTS" as const,
+        type: "SAVED_EVENT_REMINDER",
+        title: "Your saved event is coming up",
+        body: `${entry.event.title} is in 3 days at ${entry.event.location}.`,
+        data: { eventId: entry.eventId, route: `/event/${entry.eventId}` },
+        dedupeKey: `saved-event-reminder:${entry.eventId}`,
+      })),
+      skipDuplicates: true,
+    });
+    return created.count;
+  }
+
   async eventExists(eventId: string): Promise<boolean> {
     return (
       (await this.prisma.event.count({ where: { eventId } })) === 1

@@ -39,9 +39,9 @@ const paths = openApiDocument.paths as unknown as Record<
 >;
 
 describe("openapi contract", () => {
-  it("hides duplicate signup aliases from the public API docs", () => {
+  it("documents the signup OTP alias alongside the primary signup route", () => {
     expect(paths["/api/v1/auth/signup"]).toBeDefined();
-    expect(paths["/api/v1/auth/signup/send-otp"]).toBeUndefined();
+    expect(paths["/api/v1/auth/signup/send-otp"]?.post).toBeDefined();
   });
 
   it("describes success and failure outcomes clearly for login and signup", () => {
