@@ -18,7 +18,7 @@ import type {} from "@fastify/multipart";
 import {
   CurrentUser,
 } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import { ConsoleAccess, Roles } from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -155,6 +155,7 @@ export class EventsController {
     };
   }
 
+  @ConsoleAccess("events:read")
   @Get("admin/all")
   @Roles("admin")
   async listAllForAdmin(

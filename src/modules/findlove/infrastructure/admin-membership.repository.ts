@@ -413,14 +413,19 @@ export class AdminMembershipRepository {
               throw AppError.validation({
                 account: ["An administrator cannot restrict their own account"],
               });
-            await tx.user.update({
-              where: { id: modifiedMember.id },
+            const actor = await tx.user.findUnique({
+              where: { id: actorId },
+              select: { consoleRoleId: true },
+            });
+            const { count } = await tx.user.updateMany({
+              where: { id: modifiedMember.id, ...(actor?.consoleRoleId ? { role: { not: "ADMIN" } } : {}) },
               data: {
                 status:
                   modifiedMember.account === "active" ? "ACTIVE" : "INACTIVE",
                 adminAccountStatus: modifiedMember.account,
               },
             });
+            if (!count) throw AppError.forbidden("Manage administrator accounts through the Eventis admin console.");
             if (
               (command.type === "member" &&
                 ["grant", "extend", "revoke"].includes(command.action)) ||

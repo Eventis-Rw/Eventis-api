@@ -6,7 +6,10 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
 
-import { ROLES_KEY } from "../decorators/roles.decorator.js";
+import {
+  CONSOLE_PERMISSION_KEY,
+  ROLES_KEY,
+} from "../decorators/roles.decorator.js";
 import { AppError } from "../errors/app-error.js";
 
 @Injectable()
@@ -30,12 +33,22 @@ export class RolesGuard implements CanActivate {
       throw AppError.unauthenticated();
     }
 
-    const hasRole = requiredRoles.some((role) =>
-      user.roles.some((r) => r.toUpperCase() === role.toUpperCase()) ||
-      user.role.toUpperCase() === role.toUpperCase(),
+    const hasRole = requiredRoles.some(
+      (role) =>
+        user.roles.some((r) => r.toUpperCase() === role.toUpperCase()) ||
+        user.role.toUpperCase() === role.toUpperCase(),
     );
 
-    if (!hasRole) {
+    const permission = this.reflector.getAllAndOverride<string>(
+      CONSOLE_PERMISSION_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    const delegated =
+      requiredRoles.some((role) => role.toLowerCase() === "admin") &&
+      permission !== undefined &&
+      user.consolePermissions?.includes(permission);
+
+    if (!hasRole && !delegated) {
       throw AppError.forbidden(
         `Access restricted to users with role: ${requiredRoles.join(", ")}`,
       );

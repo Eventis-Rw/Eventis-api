@@ -22,7 +22,7 @@ import { z } from "zod";
 import {
   CurrentUser,
 } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import { ConsoleAccess, Roles } from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -285,6 +285,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("organisers:verify")
   @Get("admin/business-verifications")
   listBusinessVerifications(
     @Query(zodPipe(businessVerificationListSchema))
@@ -298,6 +299,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("organisers:verify")
   @Patch("admin/business-verifications/:id")
   reviewBusinessVerification(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -398,6 +400,16 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("subscriptions:activate")
+  @Get("admin/organiser-subscriptions")
+  listAdminSubscriptions(
+    @Query(zodPipe(pageSchema)) query: z.infer<typeof pageSchema>,
+  ) {
+    return this.organisations.listAdminSubscriptions(query);
+  }
+
+  @Roles("admin")
+  @ConsoleAccess("subscriptions:activate")
   @Post("admin/organiser-subscriptions/:id/activate")
   activateSubscription(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -451,6 +463,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("promotions:manage")
   @Get("admin/promotions")
   listAllPromotions(
     @Query(zodPipe(promotionListSchema))
@@ -464,6 +477,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("promotions:manage")
   @Patch("admin/promotions/:id")
   reviewPromotion(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -479,6 +493,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("promotions:manage")
   @Post("admin/promotions/:id/activate")
   activatePromotion(
     @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>,

@@ -19,6 +19,7 @@ export class AdminUsersService {
     id: string,
     actorUserId: string,
     status: "ACTIVE" | "INACTIVE",
+    delegated = false,
   ): Promise<User> {
     if (!USER_ID_REGEX.test(id)) {
       throw AppError.validation({ id: ["id must be a valid UUID"] });
@@ -28,6 +29,6 @@ export class AdminUsersService {
         id: ["An administrator cannot suspend their own account"],
       });
     }
-    return this.users.setStatus(id, status);
+    return this.users.setStatus(id, status, delegated);
   }
 }

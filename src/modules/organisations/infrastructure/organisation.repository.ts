@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
 import type {
   BusinessVerification,
@@ -333,8 +334,8 @@ export class OrganisationRepository {
     });
     if (!existing) return null;
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.businessVerification.update({
-        where: { id: input.id },
+      const { count } = await tx.businessVerification.updateMany({
+        where: { id: input.id, status: "PENDING" },
         data: {
           status: input.status,
           reviewedBy: input.reviewerId,
@@ -342,6 +343,8 @@ export class OrganisationRepository {
           rejectionReason: input.rejectionReason,
         },
       });
+      if (!count) throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "Only pending verifications can be reviewed.");
+      const row = await tx.businessVerification.findUniqueOrThrow({ where: { id: input.id } });
       await tx.organisation.update({
         where: { id: row.organisationId },
         data: {
@@ -480,6 +483,17 @@ export class OrganisationRepository {
     });
   }
 
+  async listAdminSubscriptions(skip: number, take: number) {
+    const [items, total] = await Promise.all([
+      this.prisma.organiserSubscription.findMany({
+        skip, take, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        include: { plan: true, payment: true, user: { select: { organizationName: true, displayName: true, phone: true } } },
+      }),
+      this.prisma.organiserSubscription.count(),
+    ]);
+    return { items, total };
+  }
+
   async findSubscription(id: string) {
     return this.prisma.organiserSubscription.findUnique({
       where: { id },
@@ -490,6 +504,7 @@ export class OrganisationRepository {
   async activateSubscription(input: {
     id: string;
     now: Date;
+    actorId?: string;
   }): Promise<OrganiserSubscription | null> {
     const existing = await this.prisma.organiserSubscription.findUnique({
       where: { id: input.id },
@@ -508,8 +523,8 @@ export class OrganisationRepository {
       startsAt.getTime() + durationDays * 24 * 60 * 60 * 1000,
     );
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.organiserSubscription.update({
-        where: { id: input.id },
+      const { count } = await tx.organiserSubscription.updateMany({
+        where: { id: input.id, status: "PENDING" },
         data: {
           status: "ACTIVE",
           startsAt,
@@ -517,20 +532,29 @@ export class OrganisationRepository {
           postsRemaining: postQuota,
         },
       });
+      if (!count) {
+        const current = await tx.organiserSubscription.findUnique({ where: { id: input.id } });
+        if (current?.status === "ACTIVE") return current;
+        throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "Only pending subscriptions can be activated.");
+      }
       if (existing.paymentId) {
-        await tx.paymentIntent.update({
-          where: { id: existing.paymentId },
-          data: {
-            status: "SUCCEEDED",
-            paidAt: input.now,
-          },
+        await tx.paymentIntent.updateMany({
+          where: { id: existing.paymentId, status: { not: "SUCCEEDED" } },
+          data: { status: "SUCCEEDED", paidAt: input.now },
         });
+      }
+      if (input.actorId) {
+        await tx.auditLog.create({ data: {
+          actorId: input.actorId, actorRole: "admin", action: "organiser.subscription.activate",
+          subjectType: "organiser_subscription", subjectId: input.id,
+          changes: { paymentId: existing.paymentId },
+        } });
       }
       await tx.user.update({
         where: { id: existing.userId },
         data: { accountType: "POSTER" },
       });
-      return row;
+      return tx.organiserSubscription.findUniqueOrThrow({ where: { id: input.id } });
     });
   }
 
@@ -571,7 +595,7 @@ export class OrganisationRepository {
     skip: number;
     take: number;
     status?: PromotionStatus | undefined;
-  }): Promise<{ items: Promotion[]; total: number }> {
+  }) {
     const where: Prisma.PromotionWhereInput = {
       ...(params.userId ? { ownerId: params.userId } : {}),
       ...(params.status ? { status: params.status } : {}),
@@ -579,7 +603,8 @@ export class OrganisationRepository {
     const [items, total] = await Promise.all([
       this.prisma.promotion.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        include: { event: { select: { title: true } } },
         skip: params.skip,
         take: params.take,
       }),
@@ -599,8 +624,8 @@ export class OrganisationRepository {
       where: { id: input.id },
     });
     if (!existing) return null;
-    return this.prisma.promotion.update({
-      where: { id: input.id },
+    const { count } = await this.prisma.promotion.updateMany({
+      where: { id: input.id, status: "REQUESTED" },
       data: {
         status: input.status,
         reviewedBy: input.reviewerId,
@@ -608,6 +633,8 @@ export class OrganisationRepository {
         rejectionReason: input.rejectionReason,
       },
     });
+    if (!count) throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "Only requested promotions can be reviewed.");
+    return this.prisma.promotion.findUnique({ where: { id: input.id } });
   }
 
   async activatePromotion(id: string, now: Date): Promise<Promotion | null> {
@@ -615,8 +642,9 @@ export class OrganisationRepository {
       where: { id },
     });
     if (!existing) return null;
-    return this.prisma.promotion.update({
-      where: { id },
+    if (existing.status === "ACTIVE") return existing;
+    const { count } = await this.prisma.promotion.updateMany({
+      where: { id, status: "APPROVED", event: { status: "published" } },
       data: {
         status: "ACTIVE",
         startsAt: now,
@@ -625,6 +653,11 @@ export class OrganisationRepository {
         ),
       },
     });
+    const current = await this.prisma.promotion.findUnique({ where: { id } });
+    if (!count && current?.status !== "ACTIVE") {
+      throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "Activation requires an approved promotion for a published event.");
+    }
+    return current;
   }
 
   async cancelPromotion(id: string): Promise<Promotion> {

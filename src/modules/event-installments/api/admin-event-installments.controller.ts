@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import { ConsoleAccess, Roles } from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -111,6 +111,7 @@ function actorFrom(user: AuthenticatedUser | undefined): AccessUser {
 
 @Controller({ path: "admin/event-installments", version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
+@ConsoleAccess("installments:manage")
 @Roles("admin")
 export class AdminEventInstallmentsController {
   constructor(

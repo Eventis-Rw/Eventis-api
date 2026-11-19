@@ -9,7 +9,7 @@ import {
 import type { z } from "zod";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import { ConsoleAccess, Roles } from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -23,6 +23,7 @@ import type { Command } from "../domain/admin-membership.js";
 import { adminMembershipEnvelope } from "./admin-membership.dto.js";
 @Controller({ path: "admin/findlove-workspace", version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
+@ConsoleAccess("findlove:manage")
 @Roles("admin")
 export class AdminMembershipController {
   constructor(private readonly membership: AdminMembershipService) {}
