@@ -130,7 +130,7 @@ export class AdminDashboardRepository {
       });
       if (!report) throw AppError.notFound("Support ticket");
       const actor = await tx.user.findUniqueOrThrow({ where: { id: actorId } });
-      const actorName = actor.displayName ?? actor.phone;
+      const actorName = actor.displayName ?? actor.phone ?? "Eventis admin";
       if (input.reply || input.note) {
         const existing = await tx.adminSupportMessage.findUnique({
           where: { requestId: input.requestId },

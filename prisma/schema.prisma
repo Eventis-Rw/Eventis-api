@@ -134,7 +134,7 @@ enum OtpPurpose {
 model User {
   id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   adminAccountStatus      String?           @map("admin_account_status") @db.VarChar(20)
-  phone                   String            @unique @db.VarChar(30)
+  phone                   String?           @unique @db.VarChar(30)
   firstName               String?           @map("first_name") @db.VarChar(100)
   lastName                String?           @map("last_name") @db.VarChar(100)
   email                   String?           @unique @db.VarChar(255)
@@ -166,6 +166,7 @@ model User {
   updatedAt               DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   adminSupportMessages AdminSupportMessage[]
+  externalIdentities   ExternalIdentity[]
   refreshSessions      RefreshSession[]
   events               Event[]
   statuses             Status[]
@@ -1996,4 +1997,28 @@ model AdminNotificationTemplate {
   status   String   @default("draft") @db.VarChar(20)
 
   @@map("admin_notification_templates")
+}
+
+model ExternalIdentity {
+  provider String @db.VarChar(20)
+  subject String @db.VarChar(255)
+  userId String @map("user_id") @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([provider, subject])
+  @@index([userId])
+  @@map("external_identities")
+}
+
+model EmailSignInCode {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email String @db.VarChar(255)
+  codeHash String @map("code_hash") @db.VarChar(128)
+  username String? @db.VarChar(100)
+  purpose String @db.VarChar(20)
+  attempts Int @default(0)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([email, createdAt])
+  @@map("email_sign_in_codes")
 }

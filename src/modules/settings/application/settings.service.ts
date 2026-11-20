@@ -1,3 +1,5 @@
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+
 import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 import type {
@@ -6,7 +8,6 @@ import type {
   PhoneVerificationPurpose,
   PushPlatform,
 } from "@prisma/client";
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
@@ -255,6 +256,9 @@ export class SettingsService {
   ) {
     const user = await this.repository.getUser(userId);
     if (!user || user.deletedAt) throw AppError.notFound("That account");
+    if (channel === "SMS" && !user.phone) {
+      throw AppError.validation({ channel: ["Verify a phone number first, or use email verification"] });
+    }
     if (channel === "EMAIL" && !user.email) {
       throw AppError.validation({
         channel: ["Add an email address before using email verification"],
@@ -271,7 +275,7 @@ export class SettingsService {
     if (channel === "SMS") {
       try {
         await this.sms.send({
-          to: user.phone,
+          to: user.phone!,
           message: `Your Eventis account deletion code is ${code}. It expires in 10 minutes.`,
         });
       } catch (error) {
@@ -289,7 +293,7 @@ export class SettingsService {
       expiresAt: row.expiresAt.toISOString(),
       message:
         channel === "SMS"
-          ? `A deletion code was sent to ${maskPhone(user.phone)}`
+          ? `A deletion code was sent to ${maskPhone(user.phone!)}`
           : "A deletion code was requested by email",
     };
   }

@@ -140,7 +140,7 @@ suite("admin catalog HTTP/database integration", () => {
       userId: customer.id,
       planId: plan.id,
       paymentMethod: "AIRTEL_MONEY",
-      phoneNumber: customer.phone,
+      phoneNumber: customer.phone!,
       amountMinor: plan.priceMinor,
       currency: plan.currency,
       provider: "fake",

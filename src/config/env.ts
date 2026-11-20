@@ -79,6 +79,9 @@ const envSchema = z
     CALL_TURN_SHARED_SECRET: optionalString,
 
     SENTRY_DSN: optionalString,
+    GOOGLE_AUTH_CLIENT_IDS: optionalString,
+    APPLE_AUTH_CLIENT_IDS: optionalString,
+    AUTH_EMAIL_FROM: optionalString,
 
     /** `fake` for local/tests (logs instead of sending); `brevo` for real email via Brevo. */
     EMAIL_PROVIDER: z.enum(["fake", "brevo"]).default("fake"),

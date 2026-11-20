@@ -180,7 +180,7 @@ export class EventInstallmentRepository {
         lastName: true,
       },
     });
-    return row ?? null;
+    return row ? { ...row, phone: row.phone ?? "" } : null;
   }
 
   async createAgreement(input: {
@@ -1241,7 +1241,7 @@ export class EventInstallmentRepository {
     return {
       items: rows.map((row) => ({
         ...toNotificationDomain(row),
-        customer: row.customer,
+        customer: { ...row.customer, phone: row.customer.phone ?? "" },
       })),
       total,
     };
@@ -1331,7 +1331,7 @@ export class EventInstallmentRepository {
     return {
       items: rows.map((row) => ({
         ...toAuditLogDomain(row),
-        actor: row.actor,
+        actor: row.actor ? { ...row.actor, phone: row.actor.phone ?? "" } : null,
       })),
       total,
     };

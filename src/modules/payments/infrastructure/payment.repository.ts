@@ -652,7 +652,7 @@ function toAdminPaymentDomain(row: AdminPaymentRow): AdminPaymentIntent {
       : null,
     user: {
       id: row.user.id,
-      phone: row.user.phone,
+      phone: row.user.phone ?? "",
       displayName: row.user.displayName,
       firstName: row.user.firstName,
       lastName: row.user.lastName,

@@ -4,10 +4,14 @@ import type { AccountType, User } from "../domain/user.js";
 
 export type AuthRole = "admin" | "organizer_owner" | "customer";
 
-export function toSessionUser(user: User): SessionUser {
+export function toSessionUser(
+  user: User,
+): SessionUser & { email: string | null; isPhoneVerified: boolean } {
   return {
     id: user.id,
     phone: user.phone,
+    email: user.email,
+    isPhoneVerified: Boolean(user.phone),
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     roles: toAuthRoles(user),
@@ -27,6 +31,7 @@ export function toProfileResponse(user: User) {
   return {
     id: user.id,
     phone: user.phone,
+    isPhoneVerified: Boolean(user.phone),
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
@@ -81,5 +86,10 @@ export function toAuthSession(input: {
 }
 
 export type AuthSessionResponse = AuthSession & {
-  user: SessionUser & { firstName: string | null; accountType: AccountType };
+  user: SessionUser & {
+    firstName: string | null;
+    accountType: AccountType;
+    email: string | null;
+    isPhoneVerified: boolean;
+  };
 };

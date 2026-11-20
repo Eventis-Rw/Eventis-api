@@ -11,6 +11,7 @@ import { JwtAuthGuard } from "./api/jwt-auth.guard.js";
 import { UsersController } from "./api/users.controller.js";
 import { AccountTypeService } from "./application/account-type.service.js";
 import { AdminUsersService } from "./application/admin-users.service.js";
+import { AlternativeAuthService } from "./application/alternative-auth.service.js";
 import { GetMeService } from "./application/get-me.service.js";
 import { LoginService } from "./application/login.service.js";
 import { LogoutService } from "./application/logout.service.js";
@@ -42,6 +43,7 @@ import { TokenService } from "./infrastructure/token.service.js";
     AccountTypeService,
     AdminUsersService,
     LoginService,
+    AlternativeAuthService,
     UpdateProfileService,
     LookupUsersService,
     VerifyAccessTokenService,

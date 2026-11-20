@@ -89,7 +89,7 @@ export class AuthGuard implements CanActivate {
     if (account.role === "ADMIN") roles.push("admin");
     if (account.accountType === "POSTER") roles.push("organizer_owner");
     if (!roles.length) roles.push("customer");
-    request.user = { userId, phone: account.phone, role: roles[0]!, roles };
+    request.user = { userId, phone: account.phone ?? "", role: roles[0]!, roles };
 
     return true;
   }

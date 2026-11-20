@@ -349,7 +349,7 @@ export class AdminMembershipRepository {
                 currency: "RWF",
                 paymentMethod:
                   payment.method === "MTN MoMo" ? "MTN_MOMO" : "AIRTEL_MONEY",
-                phoneNumber: owner.phone,
+                phoneNumber: owner.phone ?? "",
                 provider: "admin_recorded",
                 providerTransactionId: referenceHash,
                 status:

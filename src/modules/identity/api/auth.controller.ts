@@ -1,5 +1,4 @@
 import {
-  refreshRequest,
   type AuthSession,
   type AuthTokens,
   type SessionUser,
@@ -16,11 +15,13 @@ import { z } from "zod";
 
 import {
   logoutRequest,
+  refreshRequest,
   type LogoutRequest,
   type OtpRequestResponse,
   type RefreshRequest,
 } from "../../../common/contracts/auth.js";
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
+import { AlternativeAuthService } from "../application/alternative-auth.service.js";
 import { GetMeService } from "../application/get-me.service.js";
 import { LoginService } from "../application/login.service.js";
 import { LogoutService } from "../application/logout.service.js";
@@ -60,6 +61,28 @@ const loginRequest = z.object({
   phone,
   pin,
 });
+const emailRequest = z.object({
+  email: z
+    .email()
+    .max(255)
+    .transform((value) => value.toLowerCase()),
+  purpose: z.enum(["login", "register"]),
+  username: z.string().trim().min(2).max(60).optional(),
+});
+const emailVerifyRequest = z.object({
+  email: z
+    .email()
+    .max(255)
+    .transform((value) => value.toLowerCase()),
+  challengeId: z.uuid(),
+  code: otpCode,
+});
+const socialRequest = z.object({
+  provider: z.enum(["google", "apple"]),
+  idToken: z.string().min(1).max(16384),
+  nonce: z.string().min(16).max(256).optional(),
+  username: z.string().trim().min(1).max(60).optional(),
+});
 const resetPinRequest = z.object({
   phone,
 });
@@ -74,7 +97,29 @@ export class AuthController {
     private readonly logout: LogoutService,
     private readonly getMe: GetMeService,
     private readonly loginService: LoginService,
+    private readonly alternativeAuth: AlternativeAuthService,
   ) {}
+
+  @Post("email/send-code")
+  async sendEmailCode(
+    @Body(zodPipe(emailRequest)) body: z.infer<typeof emailRequest>,
+  ) {
+    return this.alternativeAuth.sendEmailCode(body);
+  }
+
+  @Post("email/verify-code")
+  async verifyEmailCode(
+    @Body(zodPipe(emailVerifyRequest)) body: z.infer<typeof emailVerifyRequest>,
+  ) {
+    return this.alternativeAuth.verifyEmailCode(body);
+  }
+
+  @Post("social")
+  async social(
+    @Body(zodPipe(socialRequest)) body: z.infer<typeof socialRequest>,
+  ) {
+    return this.alternativeAuth.social(body);
+  }
 
   @Post("request-otp")
   async request(
