@@ -157,12 +157,14 @@ describe("openapi contract", () => {
     expect(createEventSchema.properties?.cover_image).toEqual({
       type: "string",
       format: "binary",
-      description: "JPEG, PNG or WebP image, maximum 5 MiB.",
+      description:
+        "JPEG, PNG, WebP, GIF, AVIF, HEIC/HEIF, BMP or TIFF image, maximum 10 MiB; stored in Cloudinary.",
     });
     expect(updateEventSchema.properties?.cover_image).toEqual({
       type: "string",
       format: "binary",
-      description: "JPEG, PNG or WebP image, maximum 5 MiB.",
+      description:
+        "JPEG, PNG, WebP, GIF, AVIF, HEIC/HEIF, BMP or TIFF image, maximum 10 MiB; stored in Cloudinary.",
     });
   });
 
