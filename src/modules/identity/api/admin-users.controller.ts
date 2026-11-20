@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import { ConsoleAccess, Roles } from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -17,12 +17,14 @@ import { toProfileResponse } from "../mappers/auth.mapper.js";
 export class AdminUsersController {
   constructor(private readonly users: AdminUsersService) {}
 
+  @ConsoleAccess("users:read")
   @Get()
   async list() {
     const users = await this.users.list();
     return { items: users.map(toProfileResponse) };
   }
 
+  @ConsoleAccess("users:manage")
   @Post(":id/suspend")
   async suspend(
     @Param("id") id: string,
@@ -31,6 +33,7 @@ export class AdminUsersController {
     return this.updateStatus(id, actor, "INACTIVE");
   }
 
+  @ConsoleAccess("users:manage")
   @Post(":id/activate")
   async activate(
     @Param("id") id: string,
@@ -46,7 +49,7 @@ export class AdminUsersController {
   ) {
     if (!actor) throw AppError.unauthenticated();
     return toProfileResponse(
-      await this.users.updateStatus(id, actor.userId, status),
+      await this.users.updateStatus(id, actor.userId, status, actor.consolePermissions !== undefined),
     );
   }
 }

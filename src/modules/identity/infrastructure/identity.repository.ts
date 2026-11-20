@@ -6,6 +6,7 @@ import type {
   Prisma,
 } from "@prisma/client";
 
+import { AppError } from "../../../common/errors/app-error.js";
 import { Clock } from "../../../common/clock.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import type { OtpPurpose, OtpRecord } from "../domain/otp.js";
@@ -147,12 +148,15 @@ export class UserRepository {
   async setStatus(
     userId: string,
     status: "ACTIVE" | "INACTIVE",
+    delegated = false,
   ): Promise<User> {
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.user.update({
-        where: { id: userId },
+      const { count } = await tx.user.updateMany({
+        where: { id: userId, ...(delegated ? { role: { not: "ADMIN" } } : {}) },
         data: { status },
       });
+      if (!count) throw AppError.notFound("That manageable user");
+      const row = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       if (status === "INACTIVE") {
         await tx.refreshSession.updateMany({
           where: { userId, revokedAt: null },

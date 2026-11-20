@@ -475,10 +475,23 @@ export class OrganisationsService {
     );
   }
 
+  async listAdminSubscriptions(input: { page: number; limit: number }) {
+    const { items, total } = await this.organisations.listAdminSubscriptions(
+      (input.page - 1) * input.limit, input.limit,
+    );
+    return {
+      ...input, total,
+      items: items.map((row) => ({
+        ...toSubscriptionResponse(row),
+        organiser: row.user.organizationName || row.user.displayName || row.user.phone,
+      })),
+    };
+  }
+
   async activateSubscription(adminUserId: string, id: string) {
-    void adminUserId;
     const row = await this.organisations.activateSubscription({
       id,
+      actorId: adminUserId,
       now: this.clock.now(),
     });
     if (!row) throw AppError.notFound("That organiser subscription");
@@ -580,7 +593,7 @@ export class OrganisationsService {
       status: input.status,
     });
     return {
-      items: items.map(toPromotionResponse),
+      items: items.map((row) => ({ ...toPromotionResponse(row), eventTitle: row.event.title })),
       page: input.page,
       limit: input.limit,
       total,
