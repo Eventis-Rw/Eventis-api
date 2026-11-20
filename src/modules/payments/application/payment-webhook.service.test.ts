@@ -8,7 +8,7 @@ import type {
 import type { PaymentRepository } from "../infrastructure/payment.repository.js";
 import type { PaymentProvider } from "../infrastructure/providers/payment-provider.js";
 
-import type { PaymentActivationService } from "./payment-activation.service.js";
+import type { PaymentCompletionRegistry } from "./payment-completion.registry.js";
 import {
   PaymentWebhookService,
   type PaymentWebhookInput,
@@ -32,6 +32,8 @@ const payment: PaymentIntentWithPlan = {
   id: "550e8400-e29b-41d4-a716-446655440011",
   reference: "PAY-123",
   userId: "550e8400-e29b-41d4-a716-446655440012",
+  purpose: "FINDLOVE",
+  referenceId: null,
   installmentPlanId: plan.id,
   accountType: "PRIVATE",
   amountMinor: 15000n,
@@ -81,7 +83,6 @@ function setup(
     updates: [] as Array<{ id: string; input: unknown }>,
     activations: [] as Array<{
       payment: unknown;
-      plan: unknown;
       now: unknown;
     }>,
     processed: [] as Array<{ id: string; input: unknown }>,
@@ -112,20 +113,12 @@ function setup(
       return Promise.resolve();
     },
   } as unknown as PaymentRepository;
-  const activation = {
-    activate: (
-      activatedPayment: unknown,
-      activatedPlan: unknown,
-      at: unknown,
-    ) => {
-      calls.activations.push({
-        payment: activatedPayment,
-        plan: activatedPlan,
-        now: at,
-      });
-      return Promise.resolve({});
+  const completions = {
+    dispatchSucceeded: (dispatchedPayment: unknown, at: unknown) => {
+      calls.activations.push({ payment: dispatchedPayment, now: at });
+      return Promise.resolve();
     },
-  } as unknown as PaymentActivationService;
+  } as unknown as PaymentCompletionRegistry;
   const provider = {
     name: "test",
     verifyWebhook: () => options.signatureValid ?? true,
@@ -133,7 +126,7 @@ function setup(
   const clock = { now: () => now } as unknown as Clock;
   const service = new PaymentWebhookService(
     repository,
-    activation,
+    completions,
     clock,
     provider,
   );
@@ -178,9 +171,8 @@ describe("PaymentWebhookService", () => {
     ]);
     expect(calls.activations).toHaveLength(1);
     expect(calls.activations[0]?.payment).toEqual(
-      expect.objectContaining({ id: payment.id }),
+      expect.objectContaining({ id: payment.id, purpose: "FINDLOVE" }),
     );
-    expect(calls.activations[0]?.plan).toEqual(plan);
     expect(calls.activations[0]?.now).toEqual(now);
     expect(calls.processed).toEqual([
       {

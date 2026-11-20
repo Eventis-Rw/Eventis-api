@@ -7,7 +7,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-DIRS="src/modules/payments src/modules/ledger"
+DIRS="src/modules/payments src/modules/ledger src/modules/event-installments"
 PATTERN='parseFloat|parseInt\(|[^a-zA-Z_.]Number\(|toFixed\(|Math\.round\('
 
 found=0

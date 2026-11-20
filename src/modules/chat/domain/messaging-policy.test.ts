@@ -2,11 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { createEventisPolicy } from "./eventis.policy.js";
 import { findLovePolicy } from "./findlove.policy.js";
-import {
-  ALLOWED,
-  type SendCtx,
-  type StartCtx,
-} from "./messaging-policy.js";
+import { ALLOWED, type SendCtx, type StartCtx } from "./messaging-policy.js";
 import { messagingPolicies } from "./policies.js";
 
 const actor = {
@@ -61,16 +57,29 @@ describe("messaging policies", () => {
     ]);
   });
 
-  it("allows matching FindLove profile types and rejects cross-type pairs", async () => {
+  it("allows Private to initiate with both tiers and blocks Public to Private", async () => {
     expect(await findLovePolicy.canStart(startCtx())).toEqual(ALLOWED);
     expect(
       await findLovePolicy.canStart(
         startCtx({ peer: { ...actor, profileType: "PUBLIC" } }),
       ),
+    ).toEqual(ALLOWED);
+    expect(
+      await findLovePolicy.canStart(
+        startCtx({ actor: { ...actor, profileType: "PUBLIC" } }),
+      ),
     ).toEqual({ allowed: false, code: "PROFILE_INCOMPATIBLE" });
+    expect(
+      await findLovePolicy.canStart(
+        startCtx({
+          actor: { ...actor, profileType: "PUBLIC" },
+          peer: { ...actor, profileType: "PUBLIC" },
+        }),
+      ),
+    ).toEqual(ALLOWED);
   });
 
-  it("requires a FindLove subscription only for a new request", async () => {
+  it("requires active membership for requests and accepted chats", async () => {
     expect(
       await findLovePolicy.canStart(
         startCtx({ actor: { ...actor, hasEligibleSubscription: false } }),
@@ -88,7 +97,49 @@ describe("messaging policies", () => {
           },
         }),
       ),
+    ).toEqual({ allowed: false, code: "SUBSCRIPTION_REQUIRED" });
+  });
+
+  it("lets a Public recipient accept a Private request without an upgrade", async () => {
+    expect(
+      await findLovePolicy.canStart(
+        startCtx({
+          actor: { ...actor, profileType: "PUBLIC" },
+          connection: {
+            status: "PENDING",
+            requesterId: "recipient",
+            recipientId: "sender",
+            messagesSentByActor: 0,
+          },
+        }),
+      ),
     ).toEqual(ALLOWED);
+  });
+  it("applies saved connection permissions and country restrictions", async () => {
+    expect(
+      await findLovePolicy.canStart(
+        startCtx({
+          actor: {
+            ...actor,
+            connectionPermissions: { public: false, private: true },
+          },
+          peer: { ...actor, profileType: "PUBLIC" },
+        }),
+      ),
+    ).toEqual({ allowed: false, code: "PROFILE_INCOMPATIBLE" });
+    expect(
+      await findLovePolicy.canStart(
+        startCtx({
+          actor: { ...actor, country: "Rwanda" },
+          peer: { ...actor, country: "Kenya" },
+        }),
+      ),
+    ).toEqual({ allowed: false, code: "PROFILE_INCOMPATIBLE" });
+    expect(
+      await findLovePolicy.canStart(
+        startCtx({ peer: { ...actor, hasEligibleSubscription: false } }),
+      ),
+    ).toEqual({ allowed: false, code: "SUBSCRIPTION_REQUIRED" });
   });
 
   it("limits each side to one pending message and closes rejected requests", async () => {
@@ -129,6 +180,19 @@ describe("messaging policies", () => {
         startCtx({ service: "EVENTIS", blocked: true }),
       ),
     ).toEqual({ allowed: false, code: "BLOCKED" });
+  });
+
+  it("allows open Eventis chat without an event association", async () => {
+    expect(
+      await messagingPolicies.EVENTIS.canStart(
+        startCtx({ service: "EVENTIS", contextId: "event-id", event: null }),
+      ),
+    ).toEqual(ALLOWED);
+    expect(
+      await messagingPolicies.EVENTIS.canSend(
+        sendCtx({ service: "EVENTIS", contextId: "event-id", event: null }),
+      ),
+    ).toEqual(ALLOWED);
   });
 
   it("keeps Eventis access independent from FindLove subscriptions", async () => {

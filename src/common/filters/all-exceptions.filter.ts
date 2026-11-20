@@ -10,7 +10,6 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { AppError } from "../errors/app-error.js";
 
-
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -68,7 +67,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         status: exception.status,
         body: {
           code: exception.code,
-          message: exception.message,
+          message: exception.options.fields
+            ? (Object.values(exception.options.fields).flat()[0] ??
+              exception.message)
+            : exception.message,
           requestId,
           ...(exception.options.fields
             ? { fields: exception.options.fields }

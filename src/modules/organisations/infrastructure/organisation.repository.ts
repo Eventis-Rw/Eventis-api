@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { Injectable } from "@nestjs/common";
 import type {
   BusinessVerification,
@@ -15,8 +17,9 @@ import type {
   PromotionStatus,
   PublisherProfile,
 } from "@prisma/client";
-import { randomUUID } from "node:crypto";
 
+import { Clock } from "../../../common/clock.js";
+import { AppError } from "../../../common/errors/app-error.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
 export interface OrganisationWithRelations extends Organisation {
@@ -35,7 +38,10 @@ export interface OrganisationWithRelations extends Organisation {
 
 @Injectable()
 export class OrganisationRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clock: Clock,
+  ) {}
 
   async create(input: {
     ownerId: string;
@@ -109,9 +115,9 @@ export class OrganisationRepository {
     });
   }
 
-  async listForUser(userId: string): Promise<
-    Array<{ organisation: Organisation; role: OrganisationRole }>
-  > {
+  async listForUser(
+    userId: string,
+  ): Promise<Array<{ organisation: Organisation; role: OrganisationRole }>> {
     const rows = await this.prisma.organisationMember.findMany({
       where: {
         userId,
@@ -183,10 +189,7 @@ export class OrganisationRepository {
     });
   }
 
-  async removeMember(
-    organisationId: string,
-    userId: string,
-  ): Promise<boolean> {
+  async removeMember(organisationId: string, userId: string): Promise<boolean> {
     const result = await this.prisma.organisationMember.deleteMany({
       where: { organisationId, userId, role: { not: "OWNER" } },
     });
@@ -287,7 +290,7 @@ export class OrganisationRepository {
           rejectionReason: null,
           reviewedAt: null,
           reviewedBy: null,
-          submittedAt: new Date(),
+          submittedAt: this.clock.now(),
         },
       });
       await tx.organisation.update({
@@ -406,11 +409,45 @@ export class OrganisationRepository {
     expiresAt: Date;
   }): Promise<{ subscription: OrganiserSubscription; paymentId: string }> {
     return this.prisma.$transaction(async (tx) => {
+      const plan = await tx.organiserPlan.findUniqueOrThrow({
+        where: { id: input.planId },
+      });
+      if (
+        !plan.active ||
+        plan.priceMinor !== input.amountMinor ||
+        plan.currency !== input.currency
+      )
+        throw AppError.validation({
+          plan: ["The organiser plan changed. Reload checkout before paying."],
+        });
+      const settings = await tx.organiserCatalogSettings.findUnique({
+        where: { id: "global" },
+      });
+      const method =
+        input.paymentMethod === "MTN_MOMO" ? "mtn_momo" : "airtel_money";
+      if (
+        settings &&
+        (!Array.isArray(settings.paymentMethods) ||
+          !settings.paymentMethods.includes(method))
+      )
+        throw AppError.validation({
+          paymentMethod: [
+            "This payment method is disabled in the organiser catalog",
+          ],
+        });
       const subscription = await tx.organiserSubscription.create({
         data: {
           userId: input.userId,
           planId: input.planId,
           status: "PENDING",
+          planSnapshot: {
+            durationDays: plan.durationDays,
+            postQuota: plan.postQuota,
+            interval: plan.interval,
+            name: plan.name,
+            priceMinor: plan.priceMinor.toString(),
+            currency: plan.currency,
+          },
         },
       });
       const payment = await tx.paymentIntent.create({
@@ -459,9 +496,16 @@ export class OrganisationRepository {
       include: { plan: true },
     });
     if (!existing) return null;
+    const terms = existing.planSnapshot as {
+      durationDays?: number;
+      postQuota?: number | null;
+    };
+    const durationDays = terms.durationDays ?? existing.plan.durationDays;
+    const postQuota =
+      "postQuota" in terms ? terms.postQuota! : existing.plan.postQuota;
     const startsAt = input.now;
     const expiresAt = new Date(
-      startsAt.getTime() + existing.plan.durationDays * 24 * 60 * 60 * 1000,
+      startsAt.getTime() + durationDays * 24 * 60 * 60 * 1000,
     );
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.organiserSubscription.update({
@@ -470,7 +514,7 @@ export class OrganisationRepository {
           status: "ACTIVE",
           startsAt,
           expiresAt,
-          postsRemaining: existing.plan.postQuota,
+          postsRemaining: postQuota,
         },
       });
       if (existing.paymentId) {
@@ -482,13 +526,15 @@ export class OrganisationRepository {
           },
         });
       }
+      await tx.user.update({
+        where: { id: existing.userId },
+        data: { accountType: "POSTER" },
+      });
       return row;
     });
   }
 
-  async cancelSubscription(
-    id: string,
-  ): Promise<OrganiserSubscription> {
+  async cancelSubscription(id: string): Promise<OrganiserSubscription> {
     return this.prisma.organiserSubscription.update({
       where: { id },
       data: { status: "CANCELLED" },
@@ -564,10 +610,7 @@ export class OrganisationRepository {
     });
   }
 
-  async activatePromotion(
-    id: string,
-    now: Date,
-  ): Promise<Promotion | null> {
+  async activatePromotion(id: string, now: Date): Promise<Promotion | null> {
     const existing = await this.prisma.promotion.findUnique({
       where: { id },
     });

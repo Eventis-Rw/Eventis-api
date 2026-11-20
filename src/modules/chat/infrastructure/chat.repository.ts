@@ -28,7 +28,7 @@ import type {
   ReceiptRecord,
   ReceiptStatus,
 } from "../domain/chat.js";
-import { PolicyViolationError } from "../domain/chat.js";
+import { CONTACT_SYNC_MAX, PolicyViolationError } from "../domain/chat.js";
 import type {
   ConnectionFacts,
   EventFacts,
@@ -273,7 +273,41 @@ export class ChatRepository {
     return this.prisma.contactAlias.findMany({
       where: { ownerId },
       orderBy: [{ firstName: "asc" }, { phone: "asc" }],
-      take: 500,
+      take: CONTACT_SYNC_MAX,
+    });
+  }
+
+  async updateContactAlias(
+    ownerId: string,
+    currentPhone: string,
+    input: {
+      phone: string;
+      contactUserId: string | null;
+      firstName: string;
+      lastName: string | null;
+    },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      if (input.phone !== currentPhone) {
+        await tx.contactAlias.delete({
+          where: { ownerId_phone: { ownerId, phone: currentPhone } },
+        });
+      }
+      return tx.contactAlias.upsert({
+        where: { ownerId_phone: { ownerId, phone: input.phone } },
+        create: {
+          ownerId,
+          phone: input.phone,
+          contactUserId: input.contactUserId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+        update: {
+          contactUserId: input.contactUserId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+      });
     });
   }
 
@@ -658,12 +692,16 @@ export class ChatRepository {
       await Promise.all([
         this.prisma.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, findLoveProfileType: true },
+          select: {
+            id: true,
+            findLoveProfileType: true,
+            loveProfile: { select: { country: true } },
+          },
         }),
-        this.hasSubscription(input.actorId, input.service, input.now),
+        this.activeSubscription(input.actorId, input.service, input.now),
         input.peerId
-          ? this.hasSubscription(input.peerId, input.service, input.now)
-          : Promise.resolve(false),
+          ? this.activeSubscription(input.peerId, input.service, input.now)
+          : Promise.resolve(null),
         input.peerId
           ? this.areBlocked(input.actorId, input.peerId)
           : Promise.resolve(false),
@@ -678,13 +716,25 @@ export class ChatRepository {
     return {
       blocked: block,
       actor: {
-        profileType: actorUser?.findLoveProfileType ?? "PRIVATE",
-        hasEligibleSubscription: actorSub,
+        profileType: actorSub?.accountType ?? "PUBLIC",
+        country: actorUser?.loveProfile?.country ?? "",
+        ...(actorSub?.permissionsSnapshot
+          ? {
+              connectionPermissions: (
+                actorSub.permissionsSnapshot as unknown as {
+                  public: { public: boolean; private: boolean };
+                  private: { public: boolean; private: boolean };
+                }
+              )[actorSub.accountType === "PRIVATE" ? "private" : "public"],
+            }
+          : {}),
+        hasEligibleSubscription: actorSub !== null,
         hasPublishingPayment: false,
       },
       peer: {
-        profileType: peerUser?.findLoveProfileType ?? "PRIVATE",
-        hasEligibleSubscription: peerSub,
+        profileType: peerSub?.accountType ?? "PUBLIC",
+        country: peerUser?.loveProfile?.country ?? "",
+        hasEligibleSubscription: peerSub !== null,
         hasPublishingPayment: false,
       },
       connection,
@@ -713,6 +763,22 @@ export class ChatRepository {
       update: {},
       create: { blockerId, blockedId },
     });
+  }
+
+  async deleteBlock(blockerId: string, blockedId: string): Promise<void> {
+    await this.prisma.userBlock.deleteMany({
+      where: { blockerId, blockedId },
+    });
+  }
+
+  async listBlockedIds(blockerId: string): Promise<string[]> {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { blockerId },
+      select: { blockedId: true },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    return rows.map((row) => row.blockedId);
   }
 
   async createReport(input: {
@@ -752,16 +818,40 @@ export class ChatRepository {
     return row ? toConnection(row) : null;
   }
 
-  private async hasSubscription(
+  private async activeSubscription(
     userId: string,
     service: MessagingService,
     now: Date,
-  ): Promise<boolean> {
+  ) {
     const row = await this.prisma.serviceSubscription.findFirst({
-      where: { userId, service, expiresAt: { gt: now } },
-      select: { id: true },
+      where: {
+        userId,
+        service,
+        revokedAt: null,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+        user: { status: "ACTIVE" },
+      },
+      orderBy: { expiresAt: "desc" },
     });
-    return row !== null;
+    if (service === "FINDLOVE") {
+      const verification = await this.prisma.ageVerification.findFirst({
+        where: { userId },
+        orderBy: { submittedAt: "desc" },
+      });
+      if (verification?.status !== "VERIFIED" || !verification.dateOfBirth)
+        return null;
+      const birth = verification.dateOfBirth;
+      let age = now.getUTCFullYear() - birth.getUTCFullYear();
+      if (
+        now.getUTCMonth() < birth.getUTCMonth() ||
+        (now.getUTCMonth() === birth.getUTCMonth() &&
+          now.getUTCDate() < birth.getUTCDate())
+      )
+        age--;
+      if (age < 18) return null;
+    }
+    return row;
   }
 
   private async findConnectionFacts(

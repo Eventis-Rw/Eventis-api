@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Server } from "socket.io";
@@ -258,7 +260,7 @@ export class ChatService {
     );
     return {
       items: result.items.map((item) =>
-        toConversationResponse(item, profileMap),
+        this.withPresence(toConversationResponse(item, profileMap)),
       ),
       page: input.page,
       limit: input.limit,
@@ -539,7 +541,14 @@ export class ChatService {
   async addAttachment(
     userId: string,
     conversationId: string,
-    file: UploadedFile,
+    file: UploadedFile & {
+      content?: string | undefined;
+      replyToId?: string | undefined;
+      clientMessageId?: string | undefined;
+      durationMs?: number | undefined;
+      width?: number | undefined;
+      height?: number | undefined;
+    },
   ) {
     this.rateLimiter.consume(
       `message:${userId}`,
@@ -549,6 +558,33 @@ export class ChatService {
     );
     const conversation = await this.requireConversation(userId, conversationId);
     const sendFacts = await this.assertCanSend(userId, conversation);
+    if (file.replyToId) {
+      const reply = await this.chat.findMessageById(file.replyToId);
+      if (
+        !reply ||
+        reply.conversationId !== conversationId ||
+        reply.deletedAt
+      ) {
+        throw AppError.validation({
+          replyToId: ["Reply target is unavailable in this conversation"],
+        });
+      }
+    }
+    if (file.clientMessageId) {
+      const existing = await this.chat.findMessageByClientId(
+        userId,
+        file.clientMessageId,
+      );
+      if (existing) {
+        if (existing.conversationId !== conversationId) {
+          throw AppError.conflict(
+            ERROR_CODES.VALIDATION_FAILED,
+            "clientMessageId was already used for another conversation",
+          );
+        }
+        return toMessageResponse(existing);
+      }
+    }
     this.storage.validateChatFile(file);
     const type: MessageType = file.mimetype.startsWith("image/")
       ? "IMAGE"
@@ -559,9 +595,9 @@ export class ChatService {
       conversationId,
       senderId: userId,
       type,
-      content: null,
-      replyToId: null,
-      clientMessageId: null,
+      content: file.content?.trim() || null,
+      replyToId: file.replyToId ?? null,
+      clientMessageId: file.clientMessageId ?? null,
       recipientParticipantIds: conversation.participants
         .filter((p) => p.userId !== userId)
         .map((p) => p.id),
@@ -583,6 +619,9 @@ export class ChatService {
         mimeType: file.mimetype,
         sizeBytes: file.data.length,
         storageKey,
+        durationMs: file.durationMs ?? null,
+        width: file.width ?? null,
+        height: file.height ?? null,
       });
       const result = { ...message, attachments: [attachment] };
       this.publishMessage(conversation, result);
@@ -640,6 +679,49 @@ export class ChatService {
         lastName: row.lastName,
         updatedAt: row.updatedAt.toISOString(),
       })),
+    };
+  }
+
+  async updateContactAlias(
+    userId: string,
+    input: {
+      phoneNumber: string;
+      firstName: string;
+      lastName?: string | undefined;
+      newPhoneNumber?: string | undefined;
+    },
+  ) {
+    const phone = normalizeContactPhone(input.phoneNumber);
+    if (!phone) {
+      throw AppError.validation({
+        phoneNumber: ["Enter a valid phone number"],
+      });
+    }
+    const existing = (await this.chat.listContactAliases(userId)).find(
+      (alias) => alias.phone === phone,
+    );
+    if (!existing) throw AppError.notFound("Contact");
+    const nextPhone = input.newPhoneNumber
+      ? normalizeContactPhone(input.newPhoneNumber)
+      : phone;
+    if (!nextPhone) {
+      throw AppError.validation({
+        newPhoneNumber: ["Enter a valid phone number"],
+      });
+    }
+    const [matched] = await this.users.byPhones([nextPhone]);
+    const alias = await this.chat.updateContactAlias(userId, phone, {
+      phone: nextPhone,
+      contactUserId: matched?.id ?? null,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName?.trim() || null,
+    });
+    return {
+      phone: alias.phone,
+      contactUserId: alias.contactUserId,
+      firstName: alias.firstName,
+      lastName: alias.lastName,
+      updatedAt: alias.updatedAt.toISOString(),
     };
   }
 
@@ -889,6 +971,29 @@ export class ChatService {
     return toCallResponse(call);
   }
 
+  getCallIceServers(userId: string) {
+    const stunUrls = (this.env.CALL_STUN_URLS ?? "stun:stun.l.google.com:19302")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const iceServers: Array<Record<string, unknown>> = stunUrls.length
+      ? [{ urls: stunUrls }]
+      : [];
+    const turnUrls = (this.env.CALL_TURN_URLS ?? "")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const turnSecret = this.env.CALL_TURN_SHARED_SECRET;
+    if (turnUrls.length && turnSecret) {
+      const expiresAt = Math.floor(this.clock.now().getTime() / 1000) + 3600;
+      const username = `${expiresAt}:${userId}`;
+      const credential = createHmac("sha1", turnSecret).update(username).digest("base64");
+      iceServers.push({ urls: turnUrls, username, credential });
+      return { iceServers, expiresAt };
+    }
+    return { iceServers, expiresAt: null };
+  }
+
   async transitionCall(userId: string, callId: string, status: CallStatus) {
     const call = await this.chat.findCallById(callId);
     if (!call) throw AppError.notFound("Call");
@@ -1013,6 +1118,19 @@ export class ChatService {
     return { blocked: true, userId: blockedId };
   }
 
+  async unblockUser(userId: string, blockedId: string) {
+    if (userId === blockedId) {
+      throw AppError.validation({ userId: ["You cannot unblock yourself"] });
+    }
+    await this.chat.deleteBlock(userId, blockedId);
+    return { blocked: false, userId: blockedId };
+  }
+
+  async listBlockedUsers(userId: string) {
+    const userIds = await this.chat.listBlockedIds(userId);
+    return { userIds };
+  }
+
   async reportUser(
     userId: string,
     input: {
@@ -1096,12 +1214,26 @@ export class ChatService {
     const profiles = await this.users.byIds(
       conversation.participants.map((p) => p.userId),
     );
-    return toConversationResponse(
-      conversation,
-      new Map(
-        profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
+    return this.withPresence(
+      toConversationResponse(
+        conversation,
+        new Map(
+          profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
+        ),
       ),
     );
+  }
+
+  private withPresence<T extends { participants: { userId: string }[] }>(
+    conversation: T,
+  ) {
+    return {
+      ...conversation,
+      participants: conversation.participants.map((participant) => ({
+        ...participant,
+        isOnline: this.realtime.isOnline(participant.userId),
+      })),
+    };
   }
 
   private async requireConversation(userId: string, conversationId: string) {

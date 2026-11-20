@@ -9,7 +9,7 @@ import {
   type PaymentProvider,
 } from "../infrastructure/providers/payment-provider.js";
 
-import { PaymentActivationService } from "./payment-activation.service.js";
+import { PaymentCompletionRegistry } from "./payment-completion.registry.js";
 
 export interface PaymentWebhookInput {
   providerEventId: string;
@@ -34,7 +34,7 @@ export interface PaymentWebhookResult {
 export class PaymentWebhookService {
   constructor(
     private readonly payments: PaymentRepository,
-    private readonly activation: PaymentActivationService,
+    private readonly completions: PaymentCompletionRegistry,
     private readonly clock: Clock,
     @Inject(PAYMENT_GATEWAY) private readonly provider: PaymentProvider,
   ) {}
@@ -53,6 +53,15 @@ export class PaymentWebhookService {
       input.paymentReference,
     );
     if (!payment) throw AppError.notFound("Payment");
+    if (
+      payment.provider === "admin_recorded" ||
+      payment.provider !== this.provider.name
+    )
+      throw AppError.validation({
+        payment_reference: [
+          "This payment does not belong to the webhook provider",
+        ],
+      });
 
     const { event, duplicate } = await this.payments.recordWebhookEvent({
       provider: this.provider.name,
@@ -87,7 +96,7 @@ export class PaymentWebhookService {
           providerTransactionId:
             input.providerTransactionId ?? payment.providerTransactionId,
         });
-        await this.activation.activate(updated, payment.plan, now);
+        await this.completions.dispatchSucceeded(updated, now);
       } else if (
         payment.status !== "SUCCEEDED" &&
         !(

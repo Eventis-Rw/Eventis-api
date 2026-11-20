@@ -11,6 +11,7 @@ import type {
 
 export interface ParticipantResponse {
   userId: string;
+  isOnline?: boolean;
   joinedAt: string;
   lastReadAt: string | null;
   isArchived: boolean;

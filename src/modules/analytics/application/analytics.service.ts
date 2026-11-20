@@ -59,6 +59,7 @@ export class AnalyticsService {
       event_views: summary.eventViews,
       saved_events: summary.savedEvents,
       events: summary.byEvent,
+      sources: summary.sources,
       daily: summary.daily.map((row) => ({
         date: row.date.toISOString().slice(0, 10),
         impressions: row.impressions,

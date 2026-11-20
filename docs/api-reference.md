@@ -46,6 +46,42 @@ Swagger UI loads its presentation bundle from `unpkg.com`, so the UI needs an in
 | POST   | `/api/v1/admin/installments`             | Admin               |
 | PATCH  | `/api/v1/admin/installments/{id}`        | Admin               |
 | PATCH  | `/api/v1/admin/installments/{id}/status` | Admin               |
+| GET    | `/api/v1/event-installments/agreements`  | Bearer access token |
+| GET    | `/api/v1/event-installments/agreements/{id}` | Bearer access token |
+| GET    | `/api/v1/event-installments/agreements/{id}/schedules` | Bearer access token |
+| POST   | `/api/v1/event-installments/agreements/{id}/schedules/{scheduleId}/payments` | Bearer access token |
+| GET    | `/api/v1/event-installments/payments`    | Bearer access token |
+| GET    | `/api/v1/event-installments/payments/{id}/status` | Bearer access token |
+| GET    | `/api/v1/event-installments/notifications` | Bearer access token |
+| GET/POST | `/api/v1/admin/event-installments/plans` | Admin              |
+| GET/PATCH | `/api/v1/admin/event-installments/plans/{id}` | Admin         |
+| POST   | `/api/v1/admin/event-installments/plans/{id}/status` | Admin     |
+| POST   | `/api/v1/admin/event-installments/preview` | Admin              |
+| GET/POST | `/api/v1/admin/event-installments/agreements` | Admin          |
+| POST   | `/api/v1/admin/event-installments/agreements/custom` | Admin    |
+| GET    | `/api/v1/admin/event-installments/agreements/{id}` | Admin      |
+| POST   | `/api/v1/admin/event-installments/agreements/{id}/revise` | Admin |
+| POST   | `/api/v1/admin/event-installments/agreements/{id}/status` | Admin |
+| GET    | `/api/v1/admin/event-installments/agreements/{id}/schedules` | Admin |
+| POST   | `/api/v1/admin/event-installments/schedules/{id}/due-date` | Admin |
+| POST   | `/api/v1/admin/event-installments/schedules/{id}/waive` | Admin  |
+| POST   | `/api/v1/admin/event-installments/payments/manual` | Admin     |
+| GET    | `/api/v1/admin/event-installments/payments` | Admin            |
+| GET    | `/api/v1/admin/event-installments/payments/{id}` | Admin      |
+| GET/POST | `/api/v1/admin/event-installments/refunds` | Admin           |
+| GET    | `/api/v1/admin/event-installments/refunds/{id}` | Admin      |
+| POST   | `/api/v1/admin/event-installments/refunds/{id}/complete` | Admin |
+| POST   | `/api/v1/admin/event-installments/refunds/{id}/reject` | Admin |
+| GET/POST | `/api/v1/admin/event-installments/late-fees` | Admin         |
+| POST   | `/api/v1/admin/event-installments/late-fees/{id}/waive` | Admin |
+| POST   | `/api/v1/admin/event-installments/overdue-sweep` | Admin      |
+| POST   | `/api/v1/admin/event-installments/notifications/reminders` | Admin |
+| GET    | `/api/v1/admin/event-installments/notifications` | Admin      |
+| POST   | `/api/v1/admin/event-installments/notifications/{id}/sent` | Admin |
+| GET    | `/api/v1/admin/event-installments/reports/summary` | Admin   |
+| GET    | `/api/v1/admin/event-installments/reports/recent-payments` | Admin |
+| GET    | `/api/v1/admin/event-installments/reports/upcoming-schedules` | Admin |
+| GET    | `/api/v1/admin/event-installments/audit-logs` | Admin          |
 
 ## Image upload test flow
 
@@ -58,10 +94,26 @@ picker:
 
 In Swagger, click **Try it out**, choose a local file, and execute the request.
 In Postman, choose **Body → form-data**, enter the other fields as text, set
-`cover_image` or `avatar_image` to **File**, and select the image. JPEG, PNG,
-and WebP files up to 5 MiB are validated. The configured storage provider
-uploads the bytes, and the generated URL is returned in the event
-`cover_image` or profile `avatarUrl` response field.
+`cover_image` or `avatar_image` to **File**, and select the image. Event covers
+accept JPEG, PNG, WebP, GIF, AVIF, HEIC/HEIF, BMP, or TIFF up to 10 MiB and are
+stored in Cloudinary. Profile photos accept JPEG, PNG, or WebP up to 5 MiB and
+use the configured object storage provider. The generated URL is returned in
+the event `cover_image` or profile `avatarUrl` response field.
+
+## Event analytics
+
+- `POST /api/v1/events/{id}/analytics` records an event impression, view, click,
+  save, share, or website click. Authentication is optional; authenticated
+  activity is associated with the account. The `source` field may identify
+  `home`, `category`, `search`, `details`, `stories`, or `direct`.
+- `GET /api/v1/me/analytics/overview?from=...&to=...` returns account-wide
+  event totals, daily counts, source breakdowns, and per-event results. It
+  requires an organizer owner or admin account. Event view and current save
+  totals are read from the event and saved-event records; activity breakdowns
+  reflect analytics recorded during the requested period.
+
+Story viewing, booking, ticket sales, attendance, and revenue are not included
+in these analytics results.
 
 ## Chat and messaging
 
@@ -70,7 +122,10 @@ Contact matching accepts up to 200 entries at `POST /api/v1/chat/contacts/sync`;
 it returns registered matches and invite actions without retaining submitted
 contact names or phone numbers. The mobile app must request address-book access
 itself and should keep unmatched contacts locally. Contact matching is limited
-to 10 requests per user per minute.
+to 10 requests per user per minute. Saved aliases are listed at
+`GET /api/v1/chat/contacts/aliases` and renamed at
+`PATCH /api/v1/chat/contacts/aliases` with `phoneNumber`, `firstName`,
+optional `lastName` and optional `newPhoneNumber`.
 
 Create or retrieve a direct conversation with `POST /api/v1/chat/conversations`
 and `{"userIds":["<other-user-uuid>"],"service":"EVENTIS","type":"DIRECT"}`.
@@ -100,17 +155,21 @@ messages. Mark delivery at
 
 Upload one attachment using multipart field `file` at
 `POST /api/v1/chat/conversations/{id}/messages/attachments`. The maximum size
-is 15 MiB; allowed MIME types are JPEG/PNG/WebP, PDF, text, Word documents and
-audio formats. Files are stored privately and downloads at
-`GET /api/v1/chat/attachments/{id}/content` require conversation membership.
-Audio uploads become `VOICE` messages. Storage uses the existing
+is 15 MiB; allowed MIME types are JPEG/PNG/WebP, PDF, text, Word documents,
+audio and video formats. Optional multipart fields `content`, `replyToId`,
+`clientMessageId`, `durationMs`, `width` and `height` attach a caption, reply
+target, retry key and media metadata to the new message. Files are stored
+privately and downloads at `GET /api/v1/chat/attachments/{id}/content` require
+conversation membership. Audio uploads become `VOICE` messages and videos are
+stored as `FILE` messages with a `video/*` MIME type. Storage uses the existing
 `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID` and
 `STORAGE_SECRET_ACCESS_KEY` configuration.
 
 Invitations are created with `POST /api/v1/chat/invitations`; a 72-hour
 single-use deep link is returned for the mobile app to share through SMS or its
 native share UI. Only the registered account with the invited verified phone
-can accept it via `POST /api/v1/chat/invitations/accept`. No invitation SMS
+can accept it via `POST /api/v1/chat/invitations/accept`. Pending and accepted
+invitations are listed at `GET /api/v1/chat/invitations`. No invitation SMS
 provider integration is configured by this backend.
 
 Calls are initiated with `POST /api/v1/chat/calls`, transitioned with
@@ -144,13 +203,17 @@ and distributed rate limiter.
 The generated OpenAPI document lists all chat HTTP endpoints and schemas.
 WebSocket event names and payload descriptions are maintained in this section.
 Block a user with `POST /api/v1/chat/blocks` and `{"userId":"<uuid>"}`;
-either direction of a block prevents messaging. Report a user with
+either direction of a block prevents messaging. List blocked accounts at
+`GET /api/v1/chat/blocks` and remove a block at
+`DELETE /api/v1/chat/blocks/{userId}`. Report a user with
 `POST /api/v1/chat/reports` and `{"userId":"<uuid>","reason":"..."}`;
 `conversationId` and `details` are optional. FindLove policy errors include
 `PROFILE_INCOMPATIBLE`, `SUBSCRIPTION_REQUIRED`, `PENDING_LIMIT_REACHED`,
-`REQUEST_NOT_ACCEPTED`, and `BLOCKED`. Eventis association failures use
-`EVENT_ASSOCIATION_REQUIRED`. Socket acknowledgements return these stable
-codes in the `error` field, and REST errors use the standard error envelope.
+`REQUEST_NOT_ACCEPTED`, and `BLOCKED`. Eventis chat is open to all registered
+accounts regardless of event role or payment, so `EVENT_ASSOCIATION_REQUIRED`
+is not returned by the default Eventis policy. Socket acknowledgements return
+these stable codes in the `error` field, and REST errors use the standard error
+envelope.
 
 Existing conversations are backfilled as `EVENTIS` by
 `prisma/migrations/20261021160000_shared_messaging_context`; this preserves
@@ -193,5 +256,30 @@ Admins manage plans at `/api/v1/admin/installments` and inspect payments at
 only and is rejected in production. `PAYMENT_PROVIDER=aggregator` requires
 `PAYMENT_PROVIDER_BASE_URL`, `PAYMENT_PROVIDER_API_KEY` and
 `PAYMENT_WEBHOOK_SECRET`.
+
+## Event installments
+
+Event pay-in-installments is a separate purpose (`EVENT_INSTALLMENT`) that reuses
+the same mobile-money collection path. See `docs/guides/event-installments.md`
+for the full model.
+
+1. An admin creates a plan (`POST /api/v1/admin/event-installments/plans`) and
+   assigns it to an event/customer (`POST .../agreements`), or creates a one-off
+   agreement (`POST .../agreements/custom`). The generated schedule starts with
+   the initial payment due on the start date; the remainder is split across the
+   plan frequency with any rounding remainder on the last installment.
+2. The customer lists agreements and schedules, then starts a payment for one
+   schedule (`POST /api/v1/event-installments/agreements/{id}/schedules/{scheduleId}/payments`)
+   with `amount_minor` (string), `payment_method` and `phone_number`. Send an
+   `Idempotency-Key` header. Partial and early payments are only accepted when
+   the agreement allows them.
+3. `GET /api/v1/event-installments/payments/{id}/status` reconciles the payment
+   with the provider; provider webhooks confirm through the same
+   `EVENT_INSTALLMENT` handler. Confirmation is applied with compare-and-swap so
+   a webhook and a poll can never double-credit a schedule.
+4. Overdue marking, late fees and reminders are admin-triggered, idempotent
+   sweeps. Notifications are stored as `PENDING`; there is no SMS/email provider,
+   so an admin marks them sent. Refunds have no provider API and are completed
+   manually with a `provider_refund_reference`.
 
 Errors share the `code`, `message` and `requestId` envelope; validation errors may also include `fields`, and throttling errors may include `retryAfterSeconds`. OTPs, access tokens, refresh tokens and device credentials shown as placeholders must be replaced with values from your running environment.

@@ -14,8 +14,11 @@ import { ENV, type Env } from "../../../config/env.js";
 import { StorageService } from "../../../infrastructure/storage/storage.service.js";
 import type { LoveProfileWithPhotos } from "../infrastructure/findlove.repository.js";
 import {
-  FindLoveRepository,
-} from "../infrastructure/findlove.repository.js";
+  adult,
+  defaultPermissions,
+  type Permissions,
+} from "../domain/admin-membership.js";
+import { FindLoveRepository } from "../infrastructure/findlove.repository.js";
 import {
   ageFromDate,
   toAgeVerificationResponse,
@@ -160,11 +163,14 @@ export class FindLoveService {
   }
 
   async getProfileById(userId: string, profileId: string) {
-    await this.requireProfile(userId);
+    const viewer = await this.requireEligibleProfile(userId);
     const profile = await this.findlove.findProfileById(profileId);
     if (!profile || profile.isHidden) {
       throw AppError.notFound("That Love profile");
     }
+    if (profile.country !== viewer.country)
+      throw AppError.notFound("That Love profile");
+    await this.assertEligible(profile.userId);
     return this.present(profile);
   }
 
@@ -263,9 +269,7 @@ export class FindLoveService {
       ...(input.dateOfBirth !== undefined
         ? { dateOfBirth: input.dateOfBirth }
         : {}),
-      ...(input.country !== undefined
-        ? { country: input.country.trim() }
-        : {}),
+      ...(input.country !== undefined ? { country: input.country.trim() } : {}),
       ...(input.city !== undefined ? { city: input.city.trim() } : {}),
       ...(input.neighborhood !== undefined
         ? { neighborhood: input.neighborhood.trim() }
@@ -273,9 +277,7 @@ export class FindLoveService {
       ...(input.occupation !== undefined
         ? { occupation: input.occupation?.trim() || null }
         : {}),
-      ...(input.bio !== undefined
-        ? { bio: input.bio?.trim() || null }
-        : {}),
+      ...(input.bio !== undefined ? { bio: input.bio?.trim() || null } : {}),
       ...(input.interests !== undefined
         ? { interests: unique(input.interests) }
         : {}),
@@ -315,8 +317,7 @@ export class FindLoveService {
       maxAge?: number | undefined;
     },
   ) {
-    const profile = await this.findlove.getProfile(userId);
-    if (!profile) throw AppError.notFound("Your Love profile");
+    const profile = await this.requireEligibleProfile(userId);
     if (profile.isHidden) {
       throw AppError.forbidden("Unhide your Love profile to browse");
     }
@@ -334,7 +335,7 @@ export class FindLoveService {
       requesterInterestedIn: profile.interestedIn,
       skip: (input.page - 1) * input.limit,
       take: input.limit,
-      country: input.country,
+      country: profile.country,
       city: input.city,
       gender: input.gender,
       minAge: input.minAge,
@@ -349,7 +350,7 @@ export class FindLoveService {
   }
 
   async like(userId: string, targetProfileId: string) {
-    const profile = await this.requireProfile(userId);
+    const profile = await this.requireEligibleProfile(userId);
     if (profile.id === targetProfileId) {
       throw AppError.validation({ profileId: ["You cannot like yourself"] });
     }
@@ -357,6 +358,26 @@ export class FindLoveService {
     if (!target || target.isHidden) {
       throw AppError.notFound("That Love profile");
     }
+    if (profile.country !== target.country)
+      throw AppError.notFound("That Love profile");
+    const actorAccess = await this.assertEligible(userId);
+    const targetAccess = await this.assertEligible(target.userId);
+    const permissions =
+      (actorAccess.subscription!
+        .permissionsSnapshot as unknown as Permissions | null) ??
+      defaultPermissions();
+    const actorTier =
+      actorAccess.subscription!.accountType === "PRIVATE"
+        ? "private"
+        : "public";
+    const targetTier =
+      targetAccess.subscription!.accountType === "PRIVATE"
+        ? "private"
+        : "public";
+    if (!permissions[actorTier][targetTier])
+      throw AppError.forbidden(
+        "Your membership cannot initiate this connection",
+      );
     await this.findlove.createLike(profile.id, target.id);
     const reciprocal = await this.findlove.findLike(target.id, profile.id);
     if (!reciprocal) {
@@ -386,7 +407,7 @@ export class FindLoveService {
     userId: string,
     input: { profileId: string; message?: string | null | undefined },
   ) {
-    const profile = await this.requireProfile(userId);
+    const profile = await this.requireEligibleProfile(userId);
     if (profile.id === input.profileId) {
       throw AppError.validation({
         profileId: ["You cannot connect with yourself"],
@@ -396,6 +417,26 @@ export class FindLoveService {
     if (!target || target.isHidden) {
       throw AppError.notFound("That Love profile");
     }
+    if (profile.country !== target.country)
+      throw AppError.notFound("That Love profile");
+    const actorAccess = await this.assertEligible(userId);
+    const targetAccess = await this.assertEligible(target.userId);
+    const permissions =
+      (actorAccess.subscription!
+        .permissionsSnapshot as unknown as Permissions | null) ??
+      defaultPermissions();
+    const actorTier =
+      actorAccess.subscription!.accountType === "PRIVATE"
+        ? "private"
+        : "public";
+    const targetTier =
+      targetAccess.subscription!.accountType === "PRIVATE"
+        ? "private"
+        : "public";
+    if (!permissions[actorTier][targetTier])
+      throw AppError.forbidden(
+        "Your membership cannot initiate this connection",
+      );
     const existing = await this.findlove.findConnectionBetween(
       profile.id,
       target.id,
@@ -434,7 +475,7 @@ export class FindLoveService {
     userId: string,
     direction: "incoming" | "outgoing" | "accepted",
   ) {
-    const profile = await this.requireProfile(userId);
+    const profile = await this.requireEligibleProfile(userId);
     const rows = await this.findlove.listConnections({
       profileId: profile.id,
       direction,
@@ -449,7 +490,7 @@ export class FindLoveService {
     id: string,
     status: "ACCEPTED" | "DECLINED" | "REMOVED",
   ) {
-    const profile = await this.requireProfile(userId);
+    const profile = await this.requireEligibleProfile(userId);
     const connection = await this.findlove.findConnection(id);
     if (!connection) throw AppError.notFound("That connection");
     const involved =
@@ -486,6 +527,28 @@ export class FindLoveService {
       });
     }
     return { connection: this.presentConnection(row, profile.id) };
+  }
+
+  private async assertEligible(userId: string) {
+    const facts = await this.findlove.accessFacts(userId, this.clock.now());
+    if (facts.user?.status !== "ACTIVE")
+      throw AppError.forbidden("This account is not active");
+    if (
+      facts.verification?.status !== "VERIFIED" ||
+      !facts.verification.dateOfBirth ||
+      !adult(
+        facts.verification.dateOfBirth.toISOString().slice(0, 10),
+        this.clock.nowMs(),
+      )
+    )
+      throw AppError.forbidden("Verified adult eligibility is required");
+    if (!facts.subscription)
+      throw AppError.forbidden("An active membership is required");
+    return facts;
+  }
+  private async requireEligibleProfile(userId: string) {
+    await this.assertEligible(userId);
+    return this.requireProfile(userId);
   }
 
   private async requireProfile(userId: string) {

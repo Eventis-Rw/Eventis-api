@@ -2,7 +2,10 @@ import { Injectable } from "@nestjs/common";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
-import { StorageService } from "../../../infrastructure/storage/storage.service.js";
+import {
+  MAX_EVENT_COVER_SIZE,
+  StorageService,
+} from "../../../infrastructure/storage/storage.service.js";
 import { createEvent, type EventStatus } from "../domain/event.js";
 import { EventRepository } from "../infrastructure/event.repository.js";
 
@@ -50,11 +53,12 @@ export class CreateEventService {
 
   async execute(input: CreateEventInput) {
     if (input.coverFile) {
-      this.storage.validateImage(input.coverFile);
+      this.storage.validateImage(input.coverFile, "cover_image", MAX_EVENT_COVER_SIZE);
     }
 
     let uploadedCover: string | null = null;
     let persistedCover = false;
+    let createdEventId: string | null = null;
     try {
       const draft = createEvent(
         {
@@ -87,6 +91,7 @@ export class CreateEventService {
       );
 
       const created = await this.events.create(repositoryInput(draft));
+      createdEventId = created.eventId;
 
       if (input.coverFile) {
         const key = await this.storage.uploadCoverImage(
@@ -109,6 +114,13 @@ export class CreateEventService {
           await this.storage.deleteFile(uploadedCover);
         } catch {
           // Best-effort cleanup; the original persistence error is more useful.
+        }
+      }
+      if (createdEventId && !persistedCover) {
+        try {
+          await this.events.delete(createdEventId);
+        } catch {
+          // Preserve the upload or persistence error that caused the rollback.
         }
       }
       if (error instanceof Error && /Invalid (time|date)/.test(error.message)) {

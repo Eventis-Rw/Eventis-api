@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { extname } from "node:path";
 
+import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 
 import { Clock } from "../../common/clock.js";
@@ -19,9 +20,18 @@ export const ALLOWED_IMAGE_MIMES = [
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/gif",
+  "image/avif",
+  "image/heic",
+  "image/heif",
+  "image/bmp",
+  "image/x-ms-bmp",
+  "image/tiff",
+  "image/x-tiff",
 ] as const;
 
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+export const MAX_EVENT_COVER_SIZE = 10 * 1024 * 1024; // 10 MB
 export const MAX_CHAT_FILE_SIZE = 15 * 1024 * 1024;
 export const MAX_STATUS_VIDEO_SIZE = 15 * 1024 * 1024;
 export const ALLOWED_STATUS_VIDEO_MIMES = ["video/mp4", "video/webm", "video/quicktime"] as const;
@@ -42,6 +52,9 @@ export const ALLOWED_CHAT_MIMES = [
   "audio/wav",
   "audio/x-m4a",
   "audio/m4a",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
 ] as const;
 
 @Injectable()
@@ -54,6 +67,7 @@ export class StorageService {
   validateImage(
     file: { mimetype: string; data: Buffer; filename: string },
     fieldName = "cover_image",
+    maxSize = MAX_IMAGE_SIZE,
   ): void {
     if (!ALLOWED_IMAGE_MIMES.includes(file.mimetype as (typeof ALLOWED_IMAGE_MIMES)[number])) {
       throw AppError.validation({
@@ -63,16 +77,16 @@ export class StorageService {
       });
     }
 
-    if (file.data.length > MAX_IMAGE_SIZE) {
+    if (file.data.length > maxSize) {
       throw AppError.validation({
         [fieldName]: [
-          `Image size exceeds maximum limit of ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`,
+          `Image size exceeds maximum limit of ${maxSize / (1024 * 1024)}MB`,
         ],
       });
     }
 
     const rawExt = extname(file.filename).toLowerCase();
-    const allowedExts = [".jpg", ".jpeg", ".png", ".webp"];
+    const allowedExts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".heic", ".heif", ".bmp", ".tif", ".tiff"];
     if (rawExt && !allowedExts.includes(rawExt)) {
       throw AppError.validation({
         [fieldName]: [`File extension '${rawExt}' is not allowed for images`],
@@ -83,6 +97,14 @@ export class StorageService {
       "image/jpeg": [".jpg", ".jpeg"],
       "image/png": [".png"],
       "image/webp": [".webp"],
+      "image/gif": [".gif"],
+      "image/avif": [".avif"],
+      "image/heic": [".heic"],
+      "image/heif": [".heif"],
+      "image/bmp": [".bmp"],
+      "image/x-ms-bmp": [".bmp"],
+      "image/tiff": [".tif", ".tiff"],
+      "image/x-tiff": [".tif", ".tiff"],
     }[file.mimetype];
     if (rawExt && expectedExt && !expectedExt.includes(rawExt)) {
       throw AppError.validation({
@@ -93,7 +115,11 @@ export class StorageService {
     const signatureMatches =
       (file.mimetype === "image/jpeg" && file.data.length >= 3 && file.data[0] === 0xff && file.data[1] === 0xd8 && file.data[2] === 0xff) ||
       (file.mimetype === "image/png" && file.data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) ||
-      (file.mimetype === "image/webp" && file.data.length >= 12 && file.data.toString("ascii", 0, 4) === "RIFF" && file.data.toString("ascii", 8, 12) === "WEBP");
+      (file.mimetype === "image/webp" && file.data.length >= 12 && file.data.toString("ascii", 0, 4) === "RIFF" && file.data.toString("ascii", 8, 12) === "WEBP") ||
+      (file.mimetype === "image/gif" && ["GIF87a", "GIF89a"].includes(file.data.toString("ascii", 0, 6))) ||
+      ((file.mimetype === "image/bmp" || file.mimetype === "image/x-ms-bmp") && file.data.length >= 2 && file.data.toString("ascii", 0, 2) === "BM") ||
+      ((file.mimetype === "image/tiff" || file.mimetype === "image/x-tiff") && file.data.length >= 4 && ["49492a00", "4d4d002a", "49492b00", "4d4d002b"].includes(file.data.subarray(0, 4).toString("hex"))) ||
+      ((file.mimetype === "image/avif" || file.mimetype === "image/heic" || file.mimetype === "image/heif") && isIsoBmffImage(file.data, file.mimetype));
     if (!signatureMatches) {
       throw AppError.validation({
         [fieldName]: ["File content does not match the declared image type"],
@@ -106,20 +132,19 @@ export class StorageService {
     eventId: string,
     file: { mimetype: string; data: Buffer; filename: string },
   ): Promise<string> {
-    this.validateImage(file);
+    this.validateImage(file, "cover_image", MAX_EVENT_COVER_SIZE);
 
-    let ext = extname(file.filename).toLowerCase();
-    if (!ext || ext === "") {
-      ext = file.mimetype === "image/png" ? ".png" : file.mimetype === "image/webp" ? ".webp" : ".jpg";
-    }
+    const ext = extname(file.filename).toLowerCase() || extensionForMime(file.mimetype) || ".jpg";
 
     const sanitizedKey = `events/${eventId}/cover-${randomUUID()}${ext}`;
-
-    return this.uploadImage(
-      sanitizedKey,
-      file.data,
-      file.mimetype,
-    );
+    if (!this.isCloudinaryConfigured()) {
+      throw new AppError(
+        ERROR_CODES.INTERNAL_ERROR,
+        "Event image storage is unavailable because Cloudinary is not configured on the API.",
+        503,
+      );
+    }
+    return this.uploadToCloudinary(sanitizedKey, file.data, file.mimetype, "image", true);
   }
 
   async uploadStatusMedia(userId: string, file: { mimetype: string; data: Buffer; filename: string }): Promise<string> {
@@ -155,7 +180,7 @@ export class StorageService {
     if (!ALLOWED_CHAT_MIMES.includes(file.mimetype as (typeof ALLOWED_CHAT_MIMES)[number])) {
       throw AppError.validation({
         [fieldName]: [
-          `Unsupported file type '${file.mimetype}'. Allowed types include images, PDF, text, Word documents, and audio.`,
+          `Unsupported file type '${file.mimetype}'. Allowed types include images, video, PDF, text, Word documents, and audio.`,
         ],
       });
     }
@@ -344,6 +369,7 @@ export class StorageService {
       data: Buffer,
       contentType: string,
       resourceType: "image" | "video" = "image",
+      deliverAsJpeg = false,
     ): Promise<string> {
       const cloudName = this.env.CLOUDINARY_CLOUD_NAME!;
       const apiKey = this.env.CLOUDINARY_API_KEY!;
@@ -364,20 +390,34 @@ export class StorageService {
 
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${resourceType}/upload`,
-        { method: "POST", body: form, signal: AbortSignal.timeout(10_000) },
+        { method: "POST", body: form, signal: AbortSignal.timeout(60_000) },
       );
       if (!response.ok) {
-        throw new Error(`Cloudinary image upload failed with status ${response.status}`);
+        let details = "";
+        try {
+          const payload = (await response.json()) as { error?: { message?: unknown } };
+          if (typeof payload.error?.message === "string") details = `: ${payload.error.message}`;
+        } catch {
+          // Keep the HTTP status when Cloudinary returns a non-JSON error.
+        }
+        throw new AppError(
+          ERROR_CODES.INTERNAL_ERROR,
+          "Cloudinary could not save this image. Try another supported image or contact Eventis support.",
+          502,
+          { internal: { status: response.status, details } },
+        );
       }
       const payload = (await response.json()) as { secure_url?: unknown };
       if (typeof payload.secure_url !== "string" || !payload.secure_url) {
         throw new Error("Cloudinary image upload returned no secure URL");
       }
-      return payload.secure_url;
+      return deliverAsJpeg && resourceType === "image"
+        ? payload.secure_url.replace("/image/upload/", "/image/upload/f_jpg,q_auto/")
+        : payload.secure_url;
     }
 
   private async deleteCloudinaryFile(url: string): Promise<void> {
-      const match = url.match(/\/(image|video)\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
+      const match = url.match(/\/(image|video)\/upload\/(?:f_jpg,q_auto\/)?(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
       if (!match?.[1]) return;
 
       const cloudName = this.env.CLOUDINARY_CLOUD_NAME;
@@ -461,6 +501,20 @@ function extensionForMime(mime: string): string {
       return ".png";
     case "image/webp":
       return ".webp";
+    case "image/gif":
+      return ".gif";
+    case "image/avif":
+      return ".avif";
+    case "image/heic":
+      return ".heic";
+    case "image/heif":
+      return ".heif";
+    case "image/bmp":
+    case "image/x-ms-bmp":
+      return ".bmp";
+    case "image/tiff":
+    case "image/x-tiff":
+      return ".tiff";
     case "video/mp4":
       return ".mp4";
     case "video/webm":
@@ -488,4 +542,15 @@ function extensionForMime(mime: string): string {
     default:
       return "";
   }
+}
+
+function isIsoBmffImage(data: Buffer, mime: string): boolean {
+  if (data.length < 12 || data.toString("ascii", 4, 8) !== "ftyp") return false;
+  const brands = [data.toString("ascii", 8, 12)];
+  for (let offset = 16; offset + 4 <= Math.min(data.length, 64); offset += 4) {
+    brands.push(data.toString("ascii", offset, offset + 4));
+  }
+  if (mime === "image/avif") return brands.some((brand) => brand === "avif" || brand === "avis");
+  if (mime === "image/heic") return brands.some((brand) => ["heic", "heix", "hevc", "hevx"].includes(brand));
+  return brands.some((brand) => ["mif1", "msf1", "heic", "heix"].includes(brand));
 }

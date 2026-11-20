@@ -367,13 +367,11 @@ export class OrganisationsController {
     });
   }
 
-  @Roles("organizer_owner", "admin")
   @Get("me/organiser-subscriptions")
   listSubscriptions(@CurrentUser() user: AuthenticatedUser | undefined) {
     return this.organisations.listSubscriptions(requireUser(user).userId);
   }
 
-  @Roles("organizer_owner", "admin")
   @Post("me/organiser-subscriptions")
   createSubscription(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -388,7 +386,6 @@ export class OrganisationsController {
     });
   }
 
-  @Roles("organizer_owner", "admin")
   @Post("me/organiser-subscriptions/:id/cancel")
   cancelSubscription(
     @CurrentUser() user: AuthenticatedUser | undefined,

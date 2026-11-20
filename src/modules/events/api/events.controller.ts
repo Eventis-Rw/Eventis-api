@@ -134,6 +134,27 @@ export class EventsController {
     };
   }
 
+  @Get("me/events")
+  @Roles("organizer_owner")
+  async listMine(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Query(zodPipe(listEventsDto)) query: ListEventsDto,
+  ): Promise<EventListResponse> {
+    if (!user) throw AppError.unauthenticated();
+    const result = await this.listEvents.executeForOwner(user.userId, {
+      page: query.page,
+      limit: query.limit,
+      category: query.category,
+      search: query.search,
+    });
+    return {
+      items: result.items.map((event) => this.presentation.toResponse(event)),
+      page: query.page,
+      limit: query.limit,
+      total: result.total,
+    };
+  }
+
   @Get("admin/all")
   @Roles("admin")
   async listAllForAdmin(
