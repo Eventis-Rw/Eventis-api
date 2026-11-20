@@ -46,6 +46,7 @@ const uploadPurposeSchema = z.enum([
   "EVENT_IMAGE",
   "LOVE_PHOTO",
   "AGE_ID",
+  "PAYMENT_RECEIPT",
 ]);
 const supportReportSchema = z.object({
   category: z.enum(["EVENTS", "PAYMENTS", "ACCOUNT", "SAFETY", "BUG", "OTHER"]),

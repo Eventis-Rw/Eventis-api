@@ -485,6 +485,42 @@ export class OrganisationsService {
     return toSubscriptionResponse(row);
   }
 
+  /** For a caller (e.g. the manual-payments review flow) that needs an active plan's real terms, never the client's. */
+  async getActivePlan(id: string) {
+    const plan = await this.organisations.findPlan(id);
+    if (!plan || !plan.active) throw AppError.notFound("That organiser plan");
+    return {
+      id: plan.id,
+      name: plan.name,
+      interval: plan.interval,
+      durationDays: plan.durationDays,
+      priceMinor: plan.priceMinor,
+      currency: plan.currency,
+      postQuota: plan.postQuota,
+    };
+  }
+
+  /**
+   * Activates an organiser plan directly from an approved manual payment
+   * (no PENDING subscription row or PaymentIntent involved). Used by the
+   * manual-payments review flow; called only after that flow has already
+   * confirmed the submission is eligible to approve.
+   */
+  async activateFromManualPayment(userId: string, planId: string, now: Date) {
+    const plan = await this.organisations.findPlan(planId);
+    if (!plan || !plan.active) {
+      throw AppError.validation({
+        organiserPlanId: ["That organiser plan is no longer available."],
+      });
+    }
+    const row = await this.organisations.activateFromManualPayment({
+      userId,
+      plan,
+      now,
+    });
+    return toSubscriptionResponse(row);
+  }
+
   async createPromotion(
     userId: string,
     input: {

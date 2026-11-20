@@ -744,6 +744,85 @@ model PaymentIntent {
   @@map("payment_intents")
 }
 
+// ---------- Manual payments (user-submitted screenshot, admin-reviewed) ----------
+// Deliberately separate from PaymentIntent: that table models an automated
+// gateway round trip (provider, phoneNumber, idempotencyKey, expiresAt). A
+// manual submission has none of that — a user picks a plan, pays out of band,
+// uploads proof, and an admin decides. Approval activates the same
+// ServiceSubscription / OrganiserSubscription rows the gateway flow would.
+
+enum ManualPaymentPlatform {
+  FINDLOVE
+  ORGANISER
+
+  @@map("manual_payment_platform")
+}
+
+/**
+ * A payment method can apply to one platform, or both at once. A submission never can — see ManualPaymentPlatform.
+ */
+enum ManualPaymentMethodPlatform {
+  FINDLOVE
+  ORGANISER
+  BOTH
+
+  @@map("manual_payment_method_platform")
+}
+
+enum ManualPaymentStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+
+  @@map("manual_payment_status")
+}
+
+model ManualPaymentMethod {
+  id           String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider     PaymentMethod
+  platform     ManualPaymentMethodPlatform
+  accountName  String?                     @map("account_name") @db.VarChar(120)
+  phoneNumber  String                      @map("phone_number") @db.VarChar(30)
+  instructions String?                     @db.VarChar(1000)
+  currency     String                      @default("RWF") @db.Char(3)
+  isActive     Boolean                     @default(true) @map("is_active")
+  displayOrder Int                         @default(0) @map("display_order")
+  createdAt    DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([platform, isActive, displayOrder], map: "manual_payment_methods_platform_active_idx")
+  @@map("manual_payment_methods")
+}
+
+model ManualPaymentSubmission {
+  id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reference             String                @unique @db.VarChar(32)
+  userId                String                @map("user_id") @db.Uuid
+  platform              ManualPaymentPlatform
+  // Exactly one of these two is set, matching `platform`. No Prisma relation on
+  // purpose: these rows must survive the referenced plan/method being edited or
+  // deactivated later, so only the id plus a frozen snapshot are kept.
+  installmentPlanId     String?               @map("installment_plan_id") @db.Uuid
+  organiserPlanId       String?               @map("organiser_plan_id") @db.Uuid
+  planSnapshot          Json                  @map("plan_snapshot")
+  amountMinor           BigInt                @map("amount_minor")
+  currency              String                @default("RWF") @db.Char(3)
+  paymentMethodId       String?               @map("payment_method_id") @db.Uuid
+  paymentMethodSnapshot Json                  @map("payment_method_snapshot")
+  receiptUploadId       String                @map("receipt_upload_id") @db.Uuid
+  status                ManualPaymentStatus   @default(PENDING)
+  reviewedBy            String?               @map("reviewed_by") @db.Uuid
+  reviewedAt            DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+  rejectionReason       String?               @map("rejection_reason") @db.VarChar(1000)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([userId, createdAt], map: "manual_payment_submissions_user_idx")
+  @@index([status, platform, createdAt], map: "manual_payment_submissions_status_idx")
+  @@map("manual_payment_submissions")
+}
+
 model ProviderWebhookEvent {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   provider        String    @db.VarChar(30)
@@ -1049,9 +1128,9 @@ model Notification {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, dedupeKey], map: "notifications_user_dedupe_key")
   @@index([userId, readAt, createdAt], map: "notifications_user_read_idx")
   @@index([userId, createdAt], map: "notifications_user_created_idx")
-  @@unique([userId, dedupeKey], map: "notifications_user_dedupe_key")
   @@map("notifications")
 }
 
@@ -1083,6 +1162,7 @@ enum UploadPurpose {
   EVENT_IMAGE
   LOVE_PHOTO
   AGE_ID
+  PAYMENT_RECEIPT
 
   @@map("upload_purpose")
 }
