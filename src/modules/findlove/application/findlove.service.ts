@@ -3,6 +3,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import type {
   AgeDocumentType,
   AgeVerificationStatus,
+  FindLoveAccountType,
   LoveGender,
   LoveInterestedIn,
   LoveRelationshipGoal,
@@ -98,7 +99,35 @@ export class FindLoveService {
 
   async getAgeVerification(userId: string) {
     const row = await this.findlove.getLatestAgeVerification(userId);
-    return row ? toAgeVerificationResponse(row) : null;
+    const approved = await this.autoApproveIfEligible(userId, row);
+    return approved ? toAgeVerificationResponse(approved) : null;
+  }
+
+  /**
+   * DEV ONLY: a verification already sitting in PROCESSING/MANUAL_REVIEW (for
+   * example because it was submitted before FINDLOVE_AGE_AUTO_APPROVE was
+   * turned on) never resolves on its own otherwise, since "Check again" only
+   * re-reads the row. Standing in for the admin reviewer here too, so the only
+   * real check stays "is the recorded date of birth 18+", the same one
+   * submitAgeVerification already runs.
+   */
+  private async autoApproveIfEligible(
+    userId: string,
+    row: Awaited<ReturnType<FindLoveRepository["getLatestAgeVerification"]>>,
+  ) {
+    if (!row) return row;
+    if (row.status !== "PROCESSING" && row.status !== "MANUAL_REVIEW") return row;
+    if (!this.env.FINDLOVE_AGE_AUTO_APPROVE || this.env.NODE_ENV === "production") return row;
+    if (!row.dateOfBirth || ageFromDate(row.dateOfBirth) < MIN_AGE) return row;
+    const approved = await this.findlove.reviewAgeVerification({
+      id: row.id,
+      status: "VERIFIED",
+      reviewerId: userId,
+      rejectionReason: null,
+      dateOfBirth: row.dateOfBirth,
+      now: this.clock.now(),
+    });
+    return approved ?? row;
   }
 
   async listAgeVerifications(input: {
@@ -530,7 +559,7 @@ export class FindLoveService {
   }
 
   private async assertEligible(userId: string) {
-    const facts = await this.findlove.accessFacts(userId, this.clock.now());
+    let facts = await this.findlove.accessFacts(userId, this.clock.now());
     if (facts.user?.status !== "ACTIVE")
       throw AppError.forbidden("This account is not active");
     if (
@@ -542,6 +571,21 @@ export class FindLoveService {
       )
     )
       throw AppError.forbidden("Verified adult eligibility is required");
+    if (
+      !facts.subscription &&
+      this.env.FINDLOVE_MEMBERSHIP_AUTO_APPROVE &&
+      this.env.NODE_ENV !== "production"
+    ) {
+      // DEV ONLY: grant a default membership instead of requiring a real
+      // payment, so discover/connections/chat can be exercised end to end.
+      await this.findlove.grantDevMembership(
+        userId,
+        (facts.user.findLoveProfileType as unknown as FindLoveAccountType) ??
+          "PUBLIC",
+        this.clock.now(),
+      );
+      facts = await this.findlove.accessFacts(userId, this.clock.now());
+    }
     if (!facts.subscription)
       throw AppError.forbidden("An active membership is required");
     return facts;

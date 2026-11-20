@@ -3,6 +3,7 @@ import type {
   AgeDocumentType,
   AgeVerification,
   AgeVerificationStatus,
+  FindLoveAccountType,
   LoveConnection,
   LoveConnectionStatus,
   LoveGender,
@@ -10,10 +11,15 @@ import type {
   LoveProfile,
   LoveRelationshipGoal,
   Prisma,
+  ServiceSubscription,
 } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
+import { FINDLOVE_SERVICE } from "../../payments/domain/payment.js";
+import { defaultPermissions } from "../domain/admin-membership.js";
+
+const DEV_MEMBERSHIP_PERIOD_MS = 365 * 24 * 60 * 60 * 1000;
 
 export interface LoveProfileWithPhotos extends LoveProfile {
   photos: Array<{
@@ -45,6 +51,28 @@ export class FindLoveRepository {
       orderBy: { expiresAt: "desc" },
     });
     return { user, verification, subscription };
+  }
+
+  /**
+   * DEV ONLY (FINDLOVE_MEMBERSHIP_AUTO_APPROVE): grants a default membership
+   * with no payment, the same shape a real one would have, so the rest of the
+   * app never needs to special-case a missing subscription.
+   */
+  async grantDevMembership(
+    userId: string,
+    accountType: FindLoveAccountType,
+    now: Date,
+  ): Promise<ServiceSubscription> {
+    return this.prisma.serviceSubscription.create({
+      data: {
+        userId,
+        service: FINDLOVE_SERVICE,
+        accountType,
+        startsAt: now,
+        expiresAt: new Date(now.getTime() + DEV_MEMBERSHIP_PERIOD_MS),
+        permissionsSnapshot: defaultPermissions() as unknown as Prisma.InputJsonValue,
+      },
+    });
   }
 
   async getLatestAgeVerification(

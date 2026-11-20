@@ -88,12 +88,29 @@ const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+
+    /**
+     * DEV ONLY. Grants an eligible member (age-verified) a default FindLove
+     * membership the first time one is needed, instead of requiring a real
+     * payment, so discover/connections/chat can be tested end to end.
+     */
+    FINDLOVE_MEMBERSHIP_AUTO_APPROVE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
   })
   .refine(
     (e) => !(e.FINDLOVE_AGE_AUTO_APPROVE && e.NODE_ENV === "production"),
     {
       message: "FINDLOVE_AGE_AUTO_APPROVE must not be enabled in production",
       path: ["FINDLOVE_AGE_AUTO_APPROVE"],
+    },
+  )
+  .refine(
+    (e) => !(e.FINDLOVE_MEMBERSHIP_AUTO_APPROVE && e.NODE_ENV === "production"),
+    {
+      message: "FINDLOVE_MEMBERSHIP_AUTO_APPROVE must not be enabled in production",
+      path: ["FINDLOVE_MEMBERSHIP_AUTO_APPROVE"],
     },
   )
 
