@@ -493,6 +493,51 @@ export class PaymentRepository {
     }
   }
 
+  /**
+   * Activates FindLove from an approved manual payment: no PaymentIntent row
+   * involved (that table models an automated gateway round trip, which a
+   * screenshot-based review never goes through), just the same subscription
+   * creation `activateSubscription` above would do.
+   */
+  async activateFindLoveFromManualPayment(input: {
+    userId: string;
+    plan: InstallmentPlan;
+    now: Date;
+  }): Promise<ServiceSubscription> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.serviceSubscription.findFirst({
+        where: {
+          userId: input.userId,
+          service: FINDLOVE_SERVICE,
+          revokedAt: null,
+          startsAt: { lte: input.now },
+          expiresAt: { gt: input.now },
+        },
+        orderBy: { expiresAt: "desc" },
+      });
+      const expiresAt = subscriptionExpiry(
+        input.now,
+        input.plan.durationDays,
+        current?.expiresAt ?? null,
+      );
+      const created = await tx.serviceSubscription.create({
+        data: {
+          userId: input.userId,
+          service: FINDLOVE_SERVICE,
+          accountType: input.plan.accountType,
+          installmentPlanId: input.plan.id,
+          expiresAt,
+          startsAt: input.now,
+          priceMinor: input.plan.priceMinor,
+          ...(current?.permissionsSnapshot && current.accountType === input.plan.accountType
+            ? { permissionsSnapshot: current.permissionsSnapshot }
+            : {}),
+        },
+      });
+      return toSubscriptionDomain(created);
+    });
+  }
+
   async findActiveSubscription(
     userId: string,
     now: Date,

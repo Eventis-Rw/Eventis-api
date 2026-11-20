@@ -534,6 +534,48 @@ export class OrganisationRepository {
     });
   }
 
+  /**
+   * Activates an organiser plan from an approved manual payment: creates and
+   * activates the OrganiserSubscription in one step, with no PENDING row and
+   * no PaymentIntent (a screenshot-based review never goes through the
+   * gateway `createSubscription` above is built for).
+   */
+  async activateFromManualPayment(input: {
+    userId: string;
+    plan: OrganiserPlan;
+    now: Date;
+  }): Promise<OrganiserSubscription> {
+    const startsAt = input.now;
+    const expiresAt = new Date(
+      startsAt.getTime() + input.plan.durationDays * 24 * 60 * 60 * 1000,
+    );
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.organiserSubscription.create({
+        data: {
+          userId: input.userId,
+          planId: input.plan.id,
+          status: "ACTIVE",
+          startsAt,
+          expiresAt,
+          postsRemaining: input.plan.postQuota,
+          planSnapshot: {
+            durationDays: input.plan.durationDays,
+            postQuota: input.plan.postQuota,
+            interval: input.plan.interval,
+            name: input.plan.name,
+            priceMinor: input.plan.priceMinor.toString(),
+            currency: input.plan.currency,
+          },
+        },
+      });
+      await tx.user.update({
+        where: { id: input.userId },
+        data: { accountType: "POSTER" },
+      });
+      return row;
+    });
+  }
+
   async cancelSubscription(id: string): Promise<OrganiserSubscription> {
     return this.prisma.organiserSubscription.update({
       where: { id },

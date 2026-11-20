@@ -80,6 +80,12 @@ const envSchema = z
 
     SENTRY_DSN: optionalString,
 
+    /** `fake` for local/tests (logs instead of sending); `brevo` for real email via Brevo. */
+    EMAIL_PROVIDER: z.enum(["fake", "brevo"]).default("fake"),
+    BREVO_API_KEY: optionalString,
+    BREVO_SENDER_EMAIL: optionalString,
+    BREVO_SENDER_NAME: optionalString,
+
     /**
      * DEV ONLY. Marks every FindLove age verification VERIFIED as soon as it is
      * submitted, so the flow can be tested without an admin reviewer.
@@ -155,6 +161,24 @@ const envSchema = z
     {
       message: "AT_API_KEY is required when SMS_PROVIDER=africas_talking",
       path: ["AT_API_KEY"],
+    },
+  )
+  .refine((e) => e.NODE_ENV !== "production" || e.EMAIL_PROVIDER !== "fake", {
+    message: 'EMAIL_PROVIDER must not be "fake" in production',
+    path: ["EMAIL_PROVIDER"],
+  })
+  .refine(
+    (e) => e.EMAIL_PROVIDER !== "brevo" || Boolean(e.BREVO_API_KEY),
+    {
+      message: "BREVO_API_KEY is required when EMAIL_PROVIDER=brevo",
+      path: ["BREVO_API_KEY"],
+    },
+  )
+  .refine(
+    (e) => e.EMAIL_PROVIDER !== "brevo" || Boolean(e.BREVO_SENDER_EMAIL),
+    {
+      message: "BREVO_SENDER_EMAIL is required when EMAIL_PROVIDER=brevo",
+      path: ["BREVO_SENDER_EMAIL"],
     },
   );
 
