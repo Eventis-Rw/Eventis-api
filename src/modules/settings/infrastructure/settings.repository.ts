@@ -13,6 +13,7 @@ import type {
   UserPreference,
 } from "@prisma/client";
 
+import { AppError } from "../../../common/errors/app-error.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
 @Injectable()
@@ -249,21 +250,18 @@ export class SettingsRepository {
     id: string,
     now: Date,
   ): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.phoneVerification.update({
-        where: { id },
-        data: { verifiedAt: now },
-      }),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { phoneVerifiedAt: now },
-      }),
-      this.prisma.userPreference.upsert({
-        where: { userId },
-        create: { userId },
-        update: {},
-      }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.phoneVerification.findFirst({ where: { id, userId } });
+      if (!row || row.expiresAt <= now) throw AppError.unauthenticated("This verification has expired");
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      const owner = await tx.user.findUnique({ where: { phone: row.phone } });
+      if (!user || (user.phone && user.phone !== row.phone) || (owner && owner.id !== userId)) {
+        throw AppError.validation({ phone: ["This phone number cannot be attached to this account"] });
+      }
+      await tx.phoneVerification.update({ where: { id }, data: { verifiedAt: now } });
+      await tx.user.update({ where: { id: userId }, data: { phone: row.phone, phoneVerifiedAt: now } });
+      await tx.userPreference.upsert({ where: { userId }, create: { userId }, update: {} });
+    });
   }
 
   async createDeletionChallenge(input: {

@@ -111,6 +111,9 @@ export class UpdateProfileService {
   ) {
     const existingUser = await this.users.findById(userId);
     if (!existingUser) throw AppError.notFound("User");
+    if (input.email !== undefined && input.email?.toLowerCase() !== existingUser.email?.toLowerCase() && existingUser.emailVerifiedAt) {
+      throw AppError.validation({ email: ["Your sign-in email cannot be changed through profile editing."] });
+    }
 
     let newAvatarKey: string | null = null;
     let persistedAvatar = false;

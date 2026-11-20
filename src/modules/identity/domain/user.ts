@@ -11,6 +11,7 @@ export interface User {
   readonly firstName: string | null;
   readonly lastName: string | null;
   readonly email: string | null;
+  readonly emailVerifiedAt?: Date | null;
   readonly accountType: AccountType;
   readonly findLoveProfileType: LoveProfileType;
   readonly role: UserRole;

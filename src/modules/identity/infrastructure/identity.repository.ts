@@ -352,10 +352,11 @@ function toOtpDomain(row: PrismaOtp): OtpRecord {
 function toUserDomain(row: PrismaUser): User {
   return {
     id: row.id,
-    phone: row.phone,
+    phone: row.phone ?? "",
     firstName: row.firstName,
     lastName: row.lastName,
     email: row.email,
+    emailVerifiedAt: row.emailVerifiedAt,
     accountType: row.accountType,
     findLoveProfileType: row.findLoveProfileType,
     role: row.role,

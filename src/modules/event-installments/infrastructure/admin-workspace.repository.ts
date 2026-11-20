@@ -41,8 +41,11 @@ export class AdminWorkspaceRepository {
         id: u.id,
         name:
           u.displayName ??
-          ([u.firstName, u.lastName].filter(Boolean).join(" ") || u.phone),
-        phone: u.phone,
+          ([u.firstName, u.lastName].filter(Boolean).join(" ") ||
+            u.phone ||
+            u.email ||
+            "Customer"),
+        phone: u.phone ?? "",
         email: u.email,
       }),
     );
