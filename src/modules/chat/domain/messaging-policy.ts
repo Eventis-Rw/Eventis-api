@@ -1,7 +1,9 @@
 export type MessagingService = "FINDLOVE" | "EVENTIS";
 export type LoveProfileType = "PRIVATE" | "PUBLIC";
-export type ConnectionStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
-export type EventLifecycleStatus = "draft" | "published" | "cancelled";
+export type ConnectionStatus =
+  "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
+export type EventLifecycleStatus =
+  "draft" | "published" | "paused" | "cancelled";
 export type ConversationStartSource = "CONVERSATION" | "INVITE";
 
 export type PolicyErrorCode =
@@ -13,8 +15,7 @@ export type PolicyErrorCode =
   | "EVENT_ASSOCIATION_REQUIRED";
 
 export type PolicyDecision =
-  | { allowed: true }
-  | { allowed: false; code: PolicyErrorCode };
+  { allowed: true } | { allowed: false; code: PolicyErrorCode };
 
 export const ALLOWED: PolicyDecision = { allowed: true };
 export const FINDLOVE_PENDING_MESSAGES_PER_SENDER = 1;
@@ -26,6 +27,8 @@ export function deny(code: PolicyErrorCode): PolicyDecision {
 
 export interface PolicyActor {
   profileType: LoveProfileType;
+  country?: string;
+  connectionPermissions?: { public: boolean; private: boolean };
   hasEligibleSubscription: boolean;
   hasPublishingPayment: boolean;
 }

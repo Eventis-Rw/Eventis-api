@@ -28,7 +28,7 @@ import type {
   ReceiptRecord,
   ReceiptStatus,
 } from "../domain/chat.js";
-import { PolicyViolationError } from "../domain/chat.js";
+import { CONTACT_SYNC_MAX, PolicyViolationError } from "../domain/chat.js";
 import type {
   ConnectionFacts,
   EventFacts,
@@ -114,7 +114,11 @@ export class ChatRepository {
     const where: Prisma.ConversationWhereInput = {
       service: input.service,
       participants: {
-        some: { userId: input.userId, isArchived: input.archived },
+        some: {
+          userId: input.userId,
+          isArchived: input.archived,
+          hiddenAt: null,
+        },
       },
     };
     const skip = (input.page - 1) * input.limit;
@@ -186,6 +190,127 @@ export class ChatRepository {
     return toParticipant(row);
   }
 
+  async findLatestMessage(
+    conversationId: string,
+  ): Promise<{ id: string; createdAt: Date } | null> {
+    const row = await this.prisma.message.findFirst({
+      where: { conversationId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true, createdAt: true },
+    });
+    return row;
+  }
+
+  async clearConversation(input: {
+    conversationId: string;
+    userId: string;
+    hiddenAt: Date;
+    clearedBeforeMessageId: string | null;
+  }): Promise<void> {
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+        },
+      },
+      data: {
+        hiddenAt: input.hiddenAt,
+        clearedBeforeMessageId: input.clearedBeforeMessageId,
+      },
+    });
+  }
+
+  async unhideConversation(input: {
+    conversationId: string;
+    userId: string;
+  }): Promise<void> {
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+        },
+      },
+      data: { hiddenAt: null },
+    });
+  }
+
+  async upsertContactAliases(
+    ownerId: string,
+    contacts: Array<{
+      phone: string;
+      contactUserId: string | null;
+      firstName: string;
+      lastName: string | null;
+    }>,
+  ): Promise<void> {
+    if (!contacts.length) return;
+    await this.prisma.$transaction(
+      contacts.map((contact) =>
+        this.prisma.contactAlias.upsert({
+          where: {
+            ownerId_phone: { ownerId, phone: contact.phone },
+          },
+          create: {
+            ownerId,
+            phone: contact.phone,
+            contactUserId: contact.contactUserId,
+            firstName: contact.firstName,
+            lastName: contact.lastName,
+          },
+          update: {
+            contactUserId: contact.contactUserId,
+            firstName: contact.firstName,
+            lastName: contact.lastName,
+          },
+        }),
+      ),
+    );
+  }
+
+  async listContactAliases(ownerId: string) {
+    return this.prisma.contactAlias.findMany({
+      where: { ownerId },
+      orderBy: [{ firstName: "asc" }, { phone: "asc" }],
+      take: CONTACT_SYNC_MAX,
+    });
+  }
+
+  async updateContactAlias(
+    ownerId: string,
+    currentPhone: string,
+    input: {
+      phone: string;
+      contactUserId: string | null;
+      firstName: string;
+      lastName: string | null;
+    },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      if (input.phone !== currentPhone) {
+        await tx.contactAlias.delete({
+          where: { ownerId_phone: { ownerId, phone: currentPhone } },
+        });
+      }
+      return tx.contactAlias.upsert({
+        where: { ownerId_phone: { ownerId, phone: input.phone } },
+        create: {
+          ownerId,
+          phone: input.phone,
+          contactUserId: input.contactUserId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+        update: {
+          contactUserId: input.contactUserId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+      });
+    });
+  }
+
   async findMessageById(id: string): Promise<MessageRecord | null> {
     const row = await this.prisma.message.findUnique({
       where: { id },
@@ -214,6 +339,7 @@ export class ChatRepository {
     content: string | null;
     replyToId: string | null;
     clientMessageId: string | null;
+    forwardedFromId?: string | null;
     recipientParticipantIds: string[];
     now: Date;
     pendingSenderLimit?: number;
@@ -242,6 +368,7 @@ export class ChatRepository {
           content: input.content,
           replyToId: input.replyToId,
           clientMessageId: input.clientMessageId,
+          forwardedFromId: input.forwardedFromId ?? null,
           createdAt: input.now,
           updatedAt: input.now,
           receipts: {
@@ -266,6 +393,7 @@ export class ChatRepository {
     conversationId: string;
     limit: number;
     beforeId?: string;
+    after?: Date;
   }): Promise<MessageRecord[]> {
     let before: { createdAt: Date; id: string } | undefined;
     if (input.beforeId) {
@@ -280,6 +408,7 @@ export class ChatRepository {
     const rows = await this.prisma.message.findMany({
       where: {
         conversationId: input.conversationId,
+        ...(input.after ? { createdAt: { gt: input.after } } : {}),
         ...(before
           ? {
               OR: [
@@ -322,9 +451,44 @@ export class ChatRepository {
     mimeType: string;
     sizeBytes: number;
     storageKey: string;
+    durationMs?: number | null;
+    width?: number | null;
+    height?: number | null;
   }): Promise<AttachmentRecord> {
     const row = await this.prisma.messageAttachment.create({
-      data: input,
+      data: {
+        messageId: input.messageId,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        storageKey: input.storageKey,
+        durationMs: input.durationMs ?? null,
+        width: input.width ?? null,
+        height: input.height ?? null,
+      },
+    });
+    return toAttachment(row);
+  }
+
+  async updateAttachmentMetadata(input: {
+    id: string;
+    durationMs?: number | null;
+    width?: number | null;
+    height?: number | null;
+  }): Promise<AttachmentRecord | null> {
+    const existing = await this.prisma.messageAttachment.findUnique({
+      where: { id: input.id },
+    });
+    if (!existing) return null;
+    const row = await this.prisma.messageAttachment.update({
+      where: { id: input.id },
+      data: {
+        ...(input.durationMs !== undefined
+          ? { durationMs: input.durationMs }
+          : {}),
+        ...(input.width !== undefined ? { width: input.width } : {}),
+        ...(input.height !== undefined ? { height: input.height } : {}),
+      },
     });
     return toAttachment(row);
   }
@@ -528,12 +692,16 @@ export class ChatRepository {
       await Promise.all([
         this.prisma.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, findLoveProfileType: true },
+          select: {
+            id: true,
+            findLoveProfileType: true,
+            loveProfile: { select: { country: true } },
+          },
         }),
-        this.hasSubscription(input.actorId, input.service, input.now),
+        this.activeSubscription(input.actorId, input.service, input.now),
         input.peerId
-          ? this.hasSubscription(input.peerId, input.service, input.now)
-          : Promise.resolve(false),
+          ? this.activeSubscription(input.peerId, input.service, input.now)
+          : Promise.resolve(null),
         input.peerId
           ? this.areBlocked(input.actorId, input.peerId)
           : Promise.resolve(false),
@@ -548,13 +716,25 @@ export class ChatRepository {
     return {
       blocked: block,
       actor: {
-        profileType: actorUser?.findLoveProfileType ?? "PRIVATE",
-        hasEligibleSubscription: actorSub,
+        profileType: actorSub?.accountType ?? "PUBLIC",
+        country: actorUser?.loveProfile?.country ?? "",
+        ...(actorSub?.permissionsSnapshot
+          ? {
+              connectionPermissions: (
+                actorSub.permissionsSnapshot as unknown as {
+                  public: { public: boolean; private: boolean };
+                  private: { public: boolean; private: boolean };
+                }
+              )[actorSub.accountType === "PRIVATE" ? "private" : "public"],
+            }
+          : {}),
+        hasEligibleSubscription: actorSub !== null,
         hasPublishingPayment: false,
       },
       peer: {
-        profileType: peerUser?.findLoveProfileType ?? "PRIVATE",
-        hasEligibleSubscription: peerSub,
+        profileType: peerSub?.accountType ?? "PUBLIC",
+        country: peerUser?.loveProfile?.country ?? "",
+        hasEligibleSubscription: peerSub !== null,
         hasPublishingPayment: false,
       },
       connection,
@@ -583,6 +763,22 @@ export class ChatRepository {
       update: {},
       create: { blockerId, blockedId },
     });
+  }
+
+  async deleteBlock(blockerId: string, blockedId: string): Promise<void> {
+    await this.prisma.userBlock.deleteMany({
+      where: { blockerId, blockedId },
+    });
+  }
+
+  async listBlockedIds(blockerId: string): Promise<string[]> {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { blockerId },
+      select: { blockedId: true },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    return rows.map((row) => row.blockedId);
   }
 
   async createReport(input: {
@@ -622,16 +818,40 @@ export class ChatRepository {
     return row ? toConnection(row) : null;
   }
 
-  private async hasSubscription(
+  private async activeSubscription(
     userId: string,
     service: MessagingService,
     now: Date,
-  ): Promise<boolean> {
+  ) {
     const row = await this.prisma.serviceSubscription.findFirst({
-      where: { userId, service, expiresAt: { gt: now } },
-      select: { id: true },
+      where: {
+        userId,
+        service,
+        revokedAt: null,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+        user: { status: "ACTIVE" },
+      },
+      orderBy: { expiresAt: "desc" },
     });
-    return row !== null;
+    if (service === "FINDLOVE") {
+      const verification = await this.prisma.ageVerification.findFirst({
+        where: { userId },
+        orderBy: { submittedAt: "desc" },
+      });
+      if (verification?.status !== "VERIFIED" || !verification.dateOfBirth)
+        return null;
+      const birth = verification.dateOfBirth;
+      let age = now.getUTCFullYear() - birth.getUTCFullYear();
+      if (
+        now.getUTCMonth() < birth.getUTCMonth() ||
+        (now.getUTCMonth() === birth.getUTCMonth() &&
+          now.getUTCDate() < birth.getUTCDate())
+      )
+        age--;
+      if (age < 18) return null;
+    }
+    return row;
   }
 
   private async findConnectionFacts(
@@ -712,6 +932,8 @@ function toParticipant(row: PrismaParticipant): ParticipantRecord {
     lastReadAt: row.lastReadAt,
     isArchived: row.isArchived,
     isMuted: row.isMuted,
+    hiddenAt: row.hiddenAt,
+    clearedBeforeMessageId: row.clearedBeforeMessageId,
   };
 }
 
@@ -755,6 +977,9 @@ function toAttachment(row: PrismaAttachment): AttachmentRecord {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     storageKey: row.storageKey,
+    durationMs: row.durationMs,
+    width: row.width,
+    height: row.height,
     createdAt: row.createdAt,
   };
 }
@@ -784,6 +1009,7 @@ function toMessage(
     content: row.content,
     replyToId: row.replyToId,
     clientMessageId: row.clientMessageId,
+    forwardedFromId: row.forwardedFromId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     editedAt: row.editedAt,

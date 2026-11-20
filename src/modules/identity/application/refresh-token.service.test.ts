@@ -3,10 +3,11 @@ import { describe, expect, it, mock } from "bun:test";
 import { FixedClock } from "../../../common/clock.js";
 import { loadEnv } from "../../../config/env.js";
 import { TokenService } from "../infrastructure/token.service.js";
+
 import { RefreshTokenService } from "./refresh-token.service.js";
 
 describe("RefreshTokenService role claims", () => {
-  const now = new Date("2026-10-26T12:00:00.000Z");
+  const now = new Date();
   const env = loadEnv({
     NODE_ENV: "test",
     DATABASE_URL: "postgresql://u:p@localhost:5432/eventis",
@@ -29,25 +30,29 @@ describe("RefreshTokenService role claims", () => {
   it("issues refreshed roles from the current user record", async () => {
     const refresh = tokens.issueRefreshToken();
     const sessions = {
-      findByTokenHash: mock(async () => ({
-        id: "session-id",
-        userId: "11111111-1111-1111-1111-111111111111",
-        familyId: "family-id",
-        tokenHash: tokens.hashRefreshToken(refresh.token),
-        expiresAt: new Date(now.getTime() + 3600_000),
-        revokedAt: null,
-        replacedById: null,
-        createdAt: now,
-      })),
-      rotate: mock(async () => undefined),
+      findByTokenHash: mock(() =>
+        Promise.resolve({
+          id: "session-id",
+          userId: "11111111-1111-1111-1111-111111111111",
+          familyId: "family-id",
+          tokenHash: tokens.hashRefreshToken(refresh.token),
+          expiresAt: new Date(now.getTime() + 3600_000),
+          revokedAt: null,
+          replacedById: null,
+          createdAt: now,
+        }),
+      ),
+      rotate: mock(() => Promise.resolve(undefined)),
     };
     const users = {
-      findById: mock(async () => ({
-        id: "11111111-1111-1111-1111-111111111111",
-        accountType: "POSTER" as const,
-        role: "ADMIN" as const,
-        status: "ACTIVE" as const,
-      })),
+      findById: mock(() =>
+        Promise.resolve({
+          id: "11111111-1111-1111-1111-111111111111",
+          accountType: "POSTER" as const,
+          role: "ADMIN" as const,
+          status: "ACTIVE" as const,
+        }),
+      ),
     };
     const service = new RefreshTokenService(
       sessions as never,

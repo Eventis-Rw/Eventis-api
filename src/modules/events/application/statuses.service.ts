@@ -84,6 +84,22 @@ export class StatusesService {
     return { status_id: status.id, views_count: viewsCount };
   }
 
+  async viewers(id: string, userId: string) {
+    const status = await this.statuses.findActiveOwner(id, this.clock.now());
+    if (!status || status.userId !== userId) throw AppError.notFound("That status");
+    const rows = await this.statuses.listViewers(status.id);
+    return {
+      status_id: status.id,
+      views_count: rows.length,
+      viewers: rows.map((row) => ({
+        id: row.viewerId,
+        name: displayNameFor(row.viewer, "Eventis member"),
+        avatar_url: row.viewer.avatarUrl,
+        viewed_at: row.viewedAt.toISOString(),
+      })),
+    };
+  }
+
   async delete(id: string, userId: string): Promise<void> {
     const row = await this.statuses.findOwned(id, userId);
     if (!row) throw AppError.notFound("That status");
@@ -99,9 +115,28 @@ export class StatusesService {
       views_count: row._count.views,
       owner: {
         id: row.userId,
-        name: row.user.organizationName ?? ([row.user.firstName, row.user.lastName].filter(Boolean).join(" ") || "Event organiser"),
+        name: displayNameFor(row.user, "Event organiser"),
         avatar_url: row.user.avatarUrl,
       },
     };
   }
+}
+
+function displayNameFor(
+  user: {
+    organizationName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    displayName?: string | null;
+    username?: string | null;
+  },
+  fallback: string,
+): string {
+  return (
+    user.organizationName?.trim() ||
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+    user.displayName?.trim() ||
+    user.username?.trim() ||
+    fallback
+  );
 }

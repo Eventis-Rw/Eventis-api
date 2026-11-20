@@ -39,9 +39,9 @@ const paths = openApiDocument.paths as unknown as Record<
 >;
 
 describe("openapi contract", () => {
-  it("hides duplicate signup aliases from the public API docs", () => {
+  it("documents the signup OTP alias alongside the primary signup route", () => {
     expect(paths["/api/v1/auth/signup"]).toBeDefined();
-    expect(paths["/api/v1/auth/signup/send-otp"]).toBeUndefined();
+    expect(paths["/api/v1/auth/signup/send-otp"]?.post).toBeDefined();
   });
 
   it("describes success and failure outcomes clearly for login and signup", () => {
@@ -80,6 +80,20 @@ describe("openapi contract", () => {
       paths["/api/v1/events/{id}"]?.delete?.responses?.["204"],
     ).toBeDefined();
     expect(paths["/api/v1/events/{id}/share"]?.get).toBeDefined();
+  });
+
+  it("documents status viewer tracking for owners", () => {
+    expect(paths["/api/v1/statuses/{id}/views"]?.get).toBeDefined();
+    expect(paths["/api/v1/statuses/{id}/views"]?.get?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(
+      paths["/api/v1/statuses/{id}/views"]?.get?.responses?.["200"],
+    ).toBeDefined();
+    expect(paths["/api/v1/statuses/{id}/views"]?.post).toBeDefined();
+    expect(paths["/api/v1/statuses/{id}/views"]?.post?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
   });
 
   it("documents useful event failure codes and the field-error shape", () => {
@@ -143,12 +157,14 @@ describe("openapi contract", () => {
     expect(createEventSchema.properties?.cover_image).toEqual({
       type: "string",
       format: "binary",
-      description: "JPEG, PNG or WebP image, maximum 5 MiB.",
+      description:
+        "JPEG, PNG, WebP, GIF, AVIF, HEIC/HEIF, BMP or TIFF image, maximum 10 MiB; stored in Cloudinary.",
     });
     expect(updateEventSchema.properties?.cover_image).toEqual({
       type: "string",
       format: "binary",
-      description: "JPEG, PNG or WebP image, maximum 5 MiB.",
+      description:
+        "JPEG, PNG, WebP, GIF, AVIF, HEIC/HEIF, BMP or TIFF image, maximum 10 MiB; stored in Cloudinary.",
     });
   });
 
@@ -197,4 +213,44 @@ describe("openapi contract", () => {
     const chatPublicProfile = schemas.ChatPublicProfile as Schema;
     expect(chatPublicProfile.properties?.phone).toBeUndefined();
   });
+  it("documents FindLove installment and mobile money payment contracts", () => {
+    expect(paths["/api/v1/installments"]?.get).toBeDefined();
+    expect(paths["/api/v1/installments"]?.get?.security).toBeUndefined();
+    expect(paths["/api/v1/findlove/account-types"]?.get?.security).toBeUndefined();
+    expect(paths["/api/v1/payments/webhook"]?.post?.security).toBeUndefined();
+
+    const authenticatedRoutes: Array<[string, keyof Operation]> = [
+      ["/api/v1/payments", "post"],
+      ["/api/v1/payments/{id}/status", "get"],
+      ["/api/v1/admin/payments", "get"],
+      ["/api/v1/admin/installments", "get"],
+      ["/api/v1/admin/installments", "post"],
+      ["/api/v1/admin/installments/{id}", "patch"],
+      ["/api/v1/admin/installments/{id}/status", "patch"],
+      ["/api/v1/findlove/subscription", "get"],
+      ["/api/v1/findlove/account-type", "patch"],
+    ];
+
+    for (const [path, method] of authenticatedRoutes) {
+      const operation = paths[path]?.[method] as
+        | { security?: unknown[]; responses?: Record<string, unknown> }
+        | undefined;
+      expect(operation, `${method.toUpperCase()} ${path}`).toBeDefined();
+      expect(operation?.security).toEqual([{ bearerAuth: [] }]);
+      expect(operation?.responses?.["401"]).toBeDefined();
+    }
+
+    const schemas = openApiDocument.components.schemas as Record<
+      string,
+      unknown
+    >;
+    const plan = schemas.InstallmentPlan as Schema;
+    expect(plan.properties?.price_minor).toEqual(
+      expect.objectContaining({ type: "string", pattern: "^\\d+$" }),
+    );
+    const payment = schemas.PaymentStatusResponse as Schema;
+    expect(payment.properties?.payment_status?.type).toBe("string");
+    expect(payment.properties?.amount_minor?.type).toBe("string");
+  });
+
 });

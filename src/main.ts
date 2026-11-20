@@ -30,7 +30,7 @@ async function bootstrap(): Promise<void> {
     trustProxy: true,
     genReqId: (req: IncomingMessage) =>
       (req.headers[REQUEST_ID_HEADER] as string | undefined) ?? randomUUID(),
-    bodyLimit: 6 * 1024 * 1024,
+    bodyLimit: 12 * 1024 * 1024,
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -38,6 +38,7 @@ async function bootstrap(): Promise<void> {
     adapter,
     {
       bufferLogs: true,
+      rawBody: true,
     },
   );
 
@@ -56,6 +57,15 @@ async function bootstrap(): Promise<void> {
 
   await app.register(import("@fastify/helmet"), {
     contentSecurityPolicy: false,
+  });
+  const corsOrigins = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  await app.register(import("@fastify/cors"), {
+    origin: corsOrigins.length > 0 ? corsOrigins : process.env.NODE_ENV !== "production",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", REQUEST_ID_HEADER],
   });
   await app.register(import("@fastify/multipart"), {
     limits: {

@@ -73,8 +73,46 @@ const envSchema = z
     /** @deprecated Prefer AT_API_KEY. Kept so older .env files still boot. */
     SMS_API_KEY: optionalString,
 
+    /** Optional public STUN hosts and coturn shared-secret credentials for calls. */
+    CALL_STUN_URLS: optionalString,
+    CALL_TURN_URLS: optionalString,
+    CALL_TURN_SHARED_SECRET: optionalString,
+
     SENTRY_DSN: optionalString,
+
+    /**
+     * DEV ONLY. Marks every FindLove age verification VERIFIED as soon as it is
+     * submitted, so the flow can be tested without an admin reviewer.
+     */
+    FINDLOVE_AGE_AUTO_APPROVE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+
+    /**
+     * DEV ONLY. Grants an eligible member (age-verified) a default FindLove
+     * membership the first time one is needed, instead of requiring a real
+     * payment, so discover/connections/chat can be tested end to end.
+     */
+    FINDLOVE_MEMBERSHIP_AUTO_APPROVE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
   })
+  .refine(
+    (e) => !(e.FINDLOVE_AGE_AUTO_APPROVE && e.NODE_ENV === "production"),
+    {
+      message: "FINDLOVE_AGE_AUTO_APPROVE must not be enabled in production",
+      path: ["FINDLOVE_AGE_AUTO_APPROVE"],
+    },
+  )
+  .refine(
+    (e) => !(e.FINDLOVE_MEMBERSHIP_AUTO_APPROVE && e.NODE_ENV === "production"),
+    {
+      message: "FINDLOVE_MEMBERSHIP_AUTO_APPROVE must not be enabled in production",
+      path: ["FINDLOVE_MEMBERSHIP_AUTO_APPROVE"],
+    },
+  )
 
   .refine((e) => e.NODE_ENV !== "production" || e.PAYMENT_PROVIDER !== "fake", {
     message: 'PAYMENT_PROVIDER must not be "fake" in production',

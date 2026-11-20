@@ -8,6 +8,42 @@ NestJS with the Fastify adapter, **Prisma**, PostgreSQL with PostGIS, Redis and 
 This repository is the **architecture home** for Eventis: cross-repository decisions are
 recorded in [`docs/adr`](docs/adr/).
 
+## Admin dashboard integration
+
+The admin integration contracts and migration behavior are documented in
+[the integration guide](docs/guides/admin-dashboard-integration.md). This branch includes real
+FindLove membership/admin records and organiser installment workflows; older architecture notes
+below describe the original foundation and do not fully reflect the current modules.
+
+## Local feed demo events
+
+For the local admin/mobile integration database (`eventis_api_dev` on port 5433), run
+from the integration worktree:
+
+```bash
+node --max-old-space-size=256 --env-file=../Eventis-api/.env scripts/seed-feed.mjs
+```
+
+This adds eight published demo events with upcoming dates, cover images and free/paid
+examples. Stable IDs make reruns update the same demo records instead of creating
+duplicates. Dates are recalculated relative to the current day in Kigali. Paid examples
+use placeholder booking links. No SMS or payments are triggered. The script refuses
+other database hosts, ports or database names.
+
+## Local demo organiser stories
+
+After seeding the feed, run from the integration worktree:
+
+```bash
+node --max-old-space-size=256 --env-file=../Eventis-api/.env scripts/seed-social.mjs
+```
+
+This creates five demo organiser accounts and organisations, links them to the first
+five demo events, and publishes one image story per organiser with the normal 24-hour
+expiry. The seed writes directly to the local database and sends no notifications.
+Reruns refresh stories without duplicating organisers or stories. It does not create
+conversations or messages and does not change existing account PINs or access status.
+
 ## Project overview
 
 Eventis connects organizers who list events with people who discover, buy tickets and

@@ -1,6 +1,5 @@
-import { beforeAll, describe, expect, it } from "bun:test";
-
 import { ERROR_CODES } from "@eventis/contracts";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { SignJWT } from "jose";
 
 import { SystemClock } from "../../../common/clock.js";
@@ -8,6 +7,15 @@ import { AppError } from "../../../common/errors/app-error.js";
 import { loadEnv } from "../../../config/env.js";
 
 import { TokenService } from "./token.service.js";
+
+async function expectRejection(promise: Promise<unknown>): Promise<void> {
+  try {
+    await promise;
+    throw new Error("expected failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(AppError);
+  }
+}
 
 describe("TokenService", () => {
   const env = loadEnv({
@@ -54,9 +62,7 @@ describe("TokenService", () => {
       .setAudience("eventis-app")
       .setExpirationTime("1h")
       .sign(secret);
-    await expect(tokens.verifyAccessToken(wrongIssuer)).rejects.toBeInstanceOf(
-      AppError,
-    );
+    await expectRejection(tokens.verifyAccessToken(wrongIssuer));
 
     const wrongAudience = await new SignJWT({ roles: ["organizer_owner"] })
       .setProtectedHeader({ alg: "HS256" })
@@ -65,9 +71,7 @@ describe("TokenService", () => {
       .setAudience("other-app")
       .setExpirationTime("1h")
       .sign(secret);
-    await expect(
-      tokens.verifyAccessToken(wrongAudience),
-    ).rejects.toBeInstanceOf(AppError);
+    await expectRejection(tokens.verifyAccessToken(wrongAudience));
   });
 
   it("rejects an expired access token", async () => {

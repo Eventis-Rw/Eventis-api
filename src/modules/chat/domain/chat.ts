@@ -21,7 +21,7 @@ export type CallStatus =
   | "ENDED"
   | "CANCELLED";
 
-export const CONTACT_SYNC_MAX = 200;
+export const CONTACT_SYNC_MAX = 5000;
 export const CONTACT_SYNC_RATE = { max: 10, windowMs: 60_000 };
 export const INVITATION_RATE = { max: 20, windowMs: 60 * 60 * 1000 };
 export const MESSAGE_RATE = { max: 60, windowMs: 60_000 };
@@ -108,6 +108,8 @@ export interface ParticipantRecord {
   lastReadAt: Date | null;
   isArchived: boolean;
   isMuted: boolean;
+  hiddenAt: Date | null;
+  clearedBeforeMessageId: string | null;
 }
 
 export interface AttachmentRecord {
@@ -117,6 +119,9 @@ export interface AttachmentRecord {
   mimeType: string;
   sizeBytes: number;
   storageKey: string;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
   createdAt: Date;
 }
 
@@ -137,6 +142,7 @@ export interface MessageRecord {
   content: string | null;
   replyToId: string | null;
   clientMessageId: string | null;
+  forwardedFromId: string | null;
   createdAt: Date;
   updatedAt: Date;
   editedAt: Date | null;

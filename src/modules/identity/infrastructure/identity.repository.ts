@@ -3,8 +3,10 @@ import type {
   OtpVerification as PrismaOtp,
   User as PrismaUser,
   RefreshSession as PrismaSession,
+  Prisma,
 } from "@prisma/client";
 
+import { Clock } from "../../../common/clock.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import type { OtpPurpose, OtpRecord } from "../domain/otp.js";
 import type { RefreshSession, User } from "../domain/user.js";
@@ -58,10 +60,7 @@ export class OtpRepository {
     return row ? toOtpDomain(row) : null;
   }
 
-  async countSince(
-    where: { phone?: string },
-    since: Date,
-  ): Promise<number> {
+  async countSince(where: { phone?: string }, since: Date): Promise<number> {
     return this.prisma.otpVerification.count({
       where: {
         ...(where.phone ? { phone: where.phone } : {}),
@@ -88,7 +87,10 @@ export class OtpRepository {
 
 @Injectable()
 export class UserRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clock: Clock,
+  ) {}
 
   async list(): Promise<User[]> {
     const rows = await this.prisma.user.findMany({
@@ -131,7 +133,21 @@ export class UserRepository {
     return toUserDomain(row);
   }
 
-  async setStatus(userId: string, status: "ACTIVE" | "INACTIVE"): Promise<User> {
+  async setFindLoveProfileType(
+    userId: string,
+    findLoveProfileType: "PRIVATE" | "PUBLIC",
+  ): Promise<User> {
+    const row = await this.prisma.user.update({
+      where: { id: userId },
+      data: { findLoveProfileType },
+    });
+    return toUserDomain(row);
+  }
+
+  async setStatus(
+    userId: string,
+    status: "ACTIVE" | "INACTIVE",
+  ): Promise<User> {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.user.update({
         where: { id: userId },
@@ -140,7 +156,7 @@ export class UserRepository {
       if (status === "INACTIVE") {
         await tx.refreshSession.updateMany({
           where: { userId, revokedAt: null },
-          data: { revokedAt: new Date() },
+          data: { revokedAt: this.clock.now() },
         });
       }
       return toUserDomain(row);
@@ -165,10 +181,18 @@ export class UserRepository {
         | "bio"
         | "location"
         | "interestedIn"
+        | "username"
+        | "posterKind"
+        | "termsVersion"
+        | "termsAcceptedAt"
+        | "profileVisibility"
       >
     >,
   ): Promise<User> {
-    const row = await this.prisma.user.update({ where: { id: userId }, data });
+    const row = await this.prisma.user.update({
+      where: { id: userId },
+      data: data as Prisma.UserUpdateInput,
+    });
     return toUserDomain(row);
   }
 
@@ -333,6 +357,7 @@ function toUserDomain(row: PrismaUser): User {
     lastName: row.lastName,
     email: row.email,
     accountType: row.accountType,
+    findLoveProfileType: row.findLoveProfileType,
     role: row.role,
     organizationName: row.organizationName,
     organizationDescription: row.organizationDescription,
@@ -344,6 +369,13 @@ function toUserDomain(row: PrismaUser): User {
     displayName: row.displayName,
     avatarUrl: row.avatarUrl,
     pinHash: row.pinHash,
+    username: row.username,
+    posterKind: row.posterKind,
+    termsVersion: row.termsVersion,
+    termsAcceptedAt: row.termsAcceptedAt,
+    profileVisibility: row.profileVisibility,
+    lastSeenAt: row.lastSeenAt,
+    deletedAt: row.deletedAt,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

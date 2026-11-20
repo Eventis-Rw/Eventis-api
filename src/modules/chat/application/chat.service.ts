@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Server } from "socket.io";
@@ -42,6 +44,7 @@ import { ChatRateLimiter } from "../infrastructure/chat-rate-limiter.js";
 import { ChatRealtimePublisher } from "../infrastructure/chat-realtime.publisher.js";
 import { ChatRepository } from "../infrastructure/chat.repository.js";
 import {
+  toAttachmentResponse,
   toCallResponse,
   toConversationResponse,
   toInvitationResponse,
@@ -108,6 +111,23 @@ export class ChatService {
     const profiles = await this.users.byPhones(phoneNumbers);
     const byPhone = new Map(
       profiles.map((profile) => [profile.phone, profile]),
+    );
+    await this.chat.upsertContactAliases(
+      userId,
+      normalized.flatMap((contact) => {
+        if (!contact.phoneNumber) return [];
+        const matched = byPhone.get(contact.phoneNumber);
+        const fallback = splitName(contact.name);
+        return [
+          {
+            phone: contact.phoneNumber,
+            contactUserId: matched?.id ?? null,
+            firstName:
+              matched?.firstName ?? fallback.firstName ?? "Contact",
+            lastName: matched?.lastName ?? fallback.lastName,
+          },
+        ];
+      }),
     );
     return {
       contacts: normalized.map((contact) => {
@@ -240,7 +260,7 @@ export class ChatService {
     );
     return {
       items: result.items.map((item) =>
-        toConversationResponse(item, profileMap),
+        this.withPresence(toConversationResponse(item, profileMap)),
       ),
       page: input.page,
       limit: input.limit,
@@ -290,10 +310,21 @@ export class ChatService {
         });
       }
     }
+    const participant = (
+      await this.chat.findConversationById(conversationId)
+    )?.participants.find((item) => item.userId === userId);
+    let after: Date | undefined;
+    if (participant?.clearedBeforeMessageId) {
+      const cleared = await this.chat.findMessageById(
+        participant.clearedBeforeMessageId,
+      );
+      after = cleared?.createdAt;
+    }
     const rows = await this.chat.listMessages({
       conversationId,
       limit: input.limit + 1,
       ...(input.beforeId ? { beforeId: input.beforeId } : {}),
+      ...(after ? { after } : {}),
     });
     const hasMore = rows.length > input.limit;
     const messages = hasMore ? rows.slice(1) : rows;
@@ -510,7 +541,14 @@ export class ChatService {
   async addAttachment(
     userId: string,
     conversationId: string,
-    file: UploadedFile,
+    file: UploadedFile & {
+      content?: string | undefined;
+      replyToId?: string | undefined;
+      clientMessageId?: string | undefined;
+      durationMs?: number | undefined;
+      width?: number | undefined;
+      height?: number | undefined;
+    },
   ) {
     this.rateLimiter.consume(
       `message:${userId}`,
@@ -520,6 +558,33 @@ export class ChatService {
     );
     const conversation = await this.requireConversation(userId, conversationId);
     const sendFacts = await this.assertCanSend(userId, conversation);
+    if (file.replyToId) {
+      const reply = await this.chat.findMessageById(file.replyToId);
+      if (
+        !reply ||
+        reply.conversationId !== conversationId ||
+        reply.deletedAt
+      ) {
+        throw AppError.validation({
+          replyToId: ["Reply target is unavailable in this conversation"],
+        });
+      }
+    }
+    if (file.clientMessageId) {
+      const existing = await this.chat.findMessageByClientId(
+        userId,
+        file.clientMessageId,
+      );
+      if (existing) {
+        if (existing.conversationId !== conversationId) {
+          throw AppError.conflict(
+            ERROR_CODES.VALIDATION_FAILED,
+            "clientMessageId was already used for another conversation",
+          );
+        }
+        return toMessageResponse(existing);
+      }
+    }
     this.storage.validateChatFile(file);
     const type: MessageType = file.mimetype.startsWith("image/")
       ? "IMAGE"
@@ -530,9 +595,9 @@ export class ChatService {
       conversationId,
       senderId: userId,
       type,
-      content: null,
-      replyToId: null,
-      clientMessageId: null,
+      content: file.content?.trim() || null,
+      replyToId: file.replyToId ?? null,
+      clientMessageId: file.clientMessageId ?? null,
       recipientParticipantIds: conversation.participants
         .filter((p) => p.userId !== userId)
         .map((p) => p.id),
@@ -554,6 +619,9 @@ export class ChatService {
         mimeType: file.mimetype,
         sizeBytes: file.data.length,
         storageKey,
+        durationMs: file.durationMs ?? null,
+        width: file.width ?? null,
+        height: file.height ?? null,
       });
       const result = { ...message, attachments: [attachment] };
       this.publishMessage(conversation, result);
@@ -598,6 +666,178 @@ export class ChatService {
       ...object,
       fileName: attachment.fileName,
       mimeType: attachment.mimeType,
+    };
+  }
+
+  async listContactAliases(userId: string) {
+    const rows = await this.chat.listContactAliases(userId);
+    return {
+      items: rows.map((row) => ({
+        phone: row.phone,
+        contactUserId: row.contactUserId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async updateContactAlias(
+    userId: string,
+    input: {
+      phoneNumber: string;
+      firstName: string;
+      lastName?: string | undefined;
+      newPhoneNumber?: string | undefined;
+    },
+  ) {
+    const phone = normalizeContactPhone(input.phoneNumber);
+    if (!phone) {
+      throw AppError.validation({
+        phoneNumber: ["Enter a valid phone number"],
+      });
+    }
+    const existing = (await this.chat.listContactAliases(userId)).find(
+      (alias) => alias.phone === phone,
+    );
+    if (!existing) throw AppError.notFound("Contact");
+    const nextPhone = input.newPhoneNumber
+      ? normalizeContactPhone(input.newPhoneNumber)
+      : phone;
+    if (!nextPhone) {
+      throw AppError.validation({
+        newPhoneNumber: ["Enter a valid phone number"],
+      });
+    }
+    const [matched] = await this.users.byPhones([nextPhone]);
+    const alias = await this.chat.updateContactAlias(userId, phone, {
+      phone: nextPhone,
+      contactUserId: matched?.id ?? null,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName?.trim() || null,
+    });
+    return {
+      phone: alias.phone,
+      contactUserId: alias.contactUserId,
+      firstName: alias.firstName,
+      lastName: alias.lastName,
+      updatedAt: alias.updatedAt.toISOString(),
+    };
+  }
+
+  async forwardMessage(
+    userId: string,
+    messageId: string,
+    conversationIds: string[],
+  ) {
+    const source = await this.chat.findMessageById(messageId);
+    if (!source || source.deletedAt) throw AppError.notFound("Message");
+    await this.requireConversation(userId, source.conversationId);
+    const targets = [...new Set(conversationIds)];
+    if (!targets.length || targets.length > 10) {
+      throw AppError.validation({
+        conversationIds: ["Choose between 1 and 10 conversations"],
+      });
+    }
+    const forwarded = [];
+    for (const conversationId of targets) {
+      this.rateLimiter.consume(
+        `message:${userId}`,
+        this.clock.now(),
+        MESSAGE_RATE.max,
+        MESSAGE_RATE.windowMs,
+      );
+      const conversation = await this.requireConversation(
+        userId,
+        conversationId,
+      );
+      const sendFacts = await this.assertCanSend(userId, conversation);
+      let message = await this.chat.createMessage({
+        conversationId,
+        senderId: userId,
+        type: source.type,
+        content: source.content,
+        replyToId: null,
+        clientMessageId: null,
+        forwardedFromId: source.id,
+        recipientParticipantIds: conversation.participants
+          .filter((participant) => participant.userId !== userId)
+          .map((participant) => participant.id),
+        now: this.clock.now(),
+        ...(sendFacts.connection?.status === "PENDING"
+          ? { pendingSenderLimit: 1 }
+          : {}),
+      });
+      for (const attachment of source.attachments) {
+        await this.chat.addAttachment({
+          messageId: message.id,
+          fileName: attachment.fileName,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          storageKey: attachment.storageKey,
+          durationMs: attachment.durationMs,
+          width: attachment.width,
+          height: attachment.height,
+        });
+      }
+      if (source.attachments.length) {
+        message =
+          (await this.chat.findMessageById(message.id)) ?? message;
+      }
+      this.publishMessage(conversation, message);
+      forwarded.push(toMessageResponse(message));
+    }
+    return { items: forwarded };
+  }
+
+  async clearConversation(userId: string, conversationId: string) {
+    await this.requireConversation(userId, conversationId);
+    const latest = await this.chat.findLatestMessage(conversationId);
+    await this.chat.clearConversation({
+      conversationId,
+      userId,
+      hiddenAt: this.clock.now(),
+      clearedBeforeMessageId: latest?.id ?? null,
+    });
+    return { conversationId, cleared: true };
+  }
+
+  async unhideConversation(userId: string, conversationId: string) {
+    await this.requireConversation(userId, conversationId);
+    await this.chat.unhideConversation({ conversationId, userId });
+    return { conversationId, hidden: false };
+  }
+
+  async updateAttachmentMetadata(
+    userId: string,
+    attachmentId: string,
+    input: {
+      durationMs?: number | null | undefined;
+      width?: number | null | undefined;
+      height?: number | null | undefined;
+    },
+  ) {
+    const attachment = await this.chat.findAttachmentById(attachmentId);
+    if (!attachment) throw AppError.notFound("Attachment");
+    const message = await this.chat.findMessageById(attachment.messageId);
+    if (!message || message.deletedAt) throw AppError.notFound("Attachment");
+    const conversation = await this.requireConversation(
+      userId,
+      attachment.conversationId,
+    );
+    if (message.senderId !== userId) throw AppError.forbidden();
+    const updated = await this.chat.updateAttachmentMetadata({
+      id: attachmentId,
+      ...(input.durationMs !== undefined
+        ? { durationMs: input.durationMs }
+        : {}),
+      ...(input.width !== undefined ? { width: input.width } : {}),
+      ...(input.height !== undefined ? { height: input.height } : {}),
+    });
+    if (!updated) throw AppError.notFound("Attachment");
+    return {
+      ...toAttachmentResponse(updated),
+      conversationId: conversation.id,
     };
   }
 
@@ -731,6 +971,29 @@ export class ChatService {
     return toCallResponse(call);
   }
 
+  getCallIceServers(userId: string) {
+    const stunUrls = (this.env.CALL_STUN_URLS ?? "stun:stun.l.google.com:19302")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const iceServers: Array<Record<string, unknown>> = stunUrls.length
+      ? [{ urls: stunUrls }]
+      : [];
+    const turnUrls = (this.env.CALL_TURN_URLS ?? "")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const turnSecret = this.env.CALL_TURN_SHARED_SECRET;
+    if (turnUrls.length && turnSecret) {
+      const expiresAt = Math.floor(this.clock.now().getTime() / 1000) + 3600;
+      const username = `${expiresAt}:${userId}`;
+      const credential = createHmac("sha1", turnSecret).update(username).digest("base64");
+      iceServers.push({ urls: turnUrls, username, credential });
+      return { iceServers, expiresAt };
+    }
+    return { iceServers, expiresAt: null };
+  }
+
   async transitionCall(userId: string, callId: string, status: CallStatus) {
     const call = await this.chat.findCallById(callId);
     if (!call) throw AppError.notFound("Call");
@@ -855,6 +1118,19 @@ export class ChatService {
     return { blocked: true, userId: blockedId };
   }
 
+  async unblockUser(userId: string, blockedId: string) {
+    if (userId === blockedId) {
+      throw AppError.validation({ userId: ["You cannot unblock yourself"] });
+    }
+    await this.chat.deleteBlock(userId, blockedId);
+    return { blocked: false, userId: blockedId };
+  }
+
+  async listBlockedUsers(userId: string) {
+    const userIds = await this.chat.listBlockedIds(userId);
+    return { userIds };
+  }
+
   async reportUser(
     userId: string,
     input: {
@@ -938,12 +1214,26 @@ export class ChatService {
     const profiles = await this.users.byIds(
       conversation.participants.map((p) => p.userId),
     );
-    return toConversationResponse(
-      conversation,
-      new Map(
-        profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
+    return this.withPresence(
+      toConversationResponse(
+        conversation,
+        new Map(
+          profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
+        ),
       ),
     );
+  }
+
+  private withPresence<T extends { participants: { userId: string }[] }>(
+    conversation: T,
+  ) {
+    return {
+      ...conversation,
+      participants: conversation.participants.map((participant) => ({
+        ...participant,
+        isOnline: this.realtime.isOnline(participant.userId),
+      })),
+    };
   }
 
   private async requireConversation(userId: string, conversationId: string) {
@@ -1033,6 +1323,18 @@ export class ChatService {
     );
     return facts;
   }
+}
+
+function splitName(name: string | null): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: null, lastName: null };
+  return {
+    firstName: parts[0] ?? null,
+    lastName: parts.slice(1).join(" ") || null,
+  };
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

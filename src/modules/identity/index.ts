@@ -4,6 +4,7 @@ export { VerifyOtpService } from "./application/verify-otp.service.js";
 export { RefreshTokenService } from "./application/refresh-token.service.js";
 export { LogoutService } from "./application/logout.service.js";
 export { GetMeService } from "./application/get-me.service.js";
+export { AccountTypeService } from "./application/account-type.service.js";
 export { LookupUsersService } from "./application/lookup-users.service.js";
 export type { PublicUserProfile } from "./application/lookup-users.service.js";
 export { VerifyAccessTokenService } from "./application/verify-access-token.service.js";
@@ -15,4 +16,4 @@ export {
   normalizeRwandaPhone,
   PhoneNormalizationError,
 } from "./domain/phone.js";
-export type { User, UserStatus } from "./domain/user.js";
+export type { LoveProfileType, User, UserStatus } from "./domain/user.js";

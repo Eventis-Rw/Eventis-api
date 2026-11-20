@@ -86,10 +86,25 @@ export class EventsController {
       title: dto.title,
       description: dto.description,
       category: dto.category,
+      categoryId: dto.category_id,
       location: dto.location,
+      city: dto.city,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
       startDate: dto.start_date,
       time: dto.time,
+      endDate: dto.end_date,
+      endTime: dto.end_time,
+      timezone: dto.timezone,
       status: dto.status,
+      capacity: dto.capacity,
+      isPaid: dto.is_paid,
+      priceMinor: dto.price_minor,
+      currency: dto.currency,
+      bookingUrl: dto.booking_url,
+      instructions: dto.instructions,
+      tags: dto.tags,
+      organisationId: dto.organisation_id,
       coverImage: null,
       coverFile,
       posterId: user.userId,
@@ -111,6 +126,27 @@ export class EventsController {
       includeNonPublished: false,
     });
 
+    return {
+      items: result.items.map((event) => this.presentation.toResponse(event)),
+      page: query.page,
+      limit: query.limit,
+      total: result.total,
+    };
+  }
+
+  @Get("me/events")
+  @Roles("organizer_owner")
+  async listMine(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Query(zodPipe(listEventsDto)) query: ListEventsDto,
+  ): Promise<EventListResponse> {
+    if (!user) throw AppError.unauthenticated();
+    const result = await this.listEvents.executeForOwner(user.userId, {
+      page: query.page,
+      limit: query.limit,
+      category: query.category,
+      search: query.search,
+    });
     return {
       items: result.items.map((event) => this.presentation.toResponse(event)),
       page: query.page,
@@ -201,10 +237,25 @@ export class EventsController {
       title: dto.title,
       description: dto.description,
       category: dto.category,
+      categoryId: dto.category_id,
       location: dto.location,
-      startDate: dto.start_date,
+      city: dto.city,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      startDate: dto.start_date ?? undefined,
       time: dto.time,
+      endDate: dto.end_date,
+      endTime: dto.end_time,
+      timezone: dto.timezone,
       status: dto.status,
+      capacity: dto.capacity,
+      isPaid: dto.is_paid,
+      priceMinor: dto.price_minor,
+      currency: dto.currency,
+      bookingUrl: dto.booking_url,
+      instructions: dto.instructions,
+      tags: dto.tags,
+      organisationId: dto.organisation_id,
       coverFile,
     });
 
