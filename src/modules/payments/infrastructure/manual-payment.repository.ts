@@ -22,8 +22,8 @@ import type { PaymentMethod } from "../domain/payment.js";
 function toMethodDomain(row: PrismaManualPaymentMethod): ManualPaymentMethod {
   return {
     id: row.id,
-    provider: row.provider as PaymentMethod,
-    platform: row.platform as ManualPaymentMethodPlatform,
+    provider: row.provider,
+    platform: row.platform,
     accountName: row.accountName,
     phoneNumber: row.phoneNumber,
     instructions: row.instructions,
@@ -42,7 +42,7 @@ function toSubmissionDomain(
     id: row.id,
     reference: row.reference,
     userId: row.userId,
-    platform: row.platform as ManualPaymentPlatform,
+    platform: row.platform,
     installmentPlanId: row.installmentPlanId,
     organiserPlanId: row.organiserPlanId,
     planSnapshot: row.planSnapshot as unknown as ManualPaymentPlanSnapshot,
@@ -52,7 +52,7 @@ function toSubmissionDomain(
     paymentMethodSnapshot:
       row.paymentMethodSnapshot as unknown as ManualPaymentMethodSnapshot,
     receiptUploadId: row.receiptUploadId,
-    status: row.status as ManualPaymentStatus,
+    status: row.status,
     reviewedBy: row.reviewedBy,
     reviewedAt: row.reviewedAt,
     rejectionReason: row.rejectionReason,
@@ -91,7 +91,9 @@ export class ManualPaymentRepository {
   }): Promise<ManualPaymentMethod[]> {
     const rows = await this.prisma.manualPaymentMethod.findMany({
       where: {
-        ...(filter.platform ? { platform: { in: [filter.platform, "BOTH"] } } : {}),
+        ...(filter.platform
+          ? { platform: { in: [filter.platform, "BOTH"] } }
+          : {}),
         ...(filter.activeOnly ? { isActive: true } : {}),
       },
       orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
@@ -170,7 +172,8 @@ export class ManualPaymentRepository {
       SELECT nextval('manual_payment_reference_seq')::text AS value
     `;
     const value = rows[0]?.value;
-    if (!value) throw new Error("Manual payment reference sequence is unavailable");
+    if (!value)
+      throw new Error("Manual payment reference sequence is unavailable");
     return `MPAY-${value}`;
   }
 
@@ -223,12 +226,13 @@ export class ManualPaymentRepository {
 
   async findSubmissionById(
     id: string,
+    transaction: Prisma.TransactionClient = this.prisma,
   ): Promise<ManualPaymentSubmissionWithUser | null> {
-    const row = await this.prisma.manualPaymentSubmission.findUnique({
+    const row = await transaction.manualPaymentSubmission.findUnique({
       where: { id },
     });
     if (!row) return null;
-    const user = await this.prisma.user.findUnique({
+    const user = await transaction.user.findUnique({
       where: { id: row.userId },
       select: { id: true, email: true, displayName: true },
     });
@@ -363,26 +367,61 @@ export class ManualPaymentRepository {
    * already resolved it, `updateMany`'s count is 0 and this returns null —
    * the idempotency guard a repeated approve/reject click relies on.
    */
-  async resolve(input: {
-    id: string;
-    status: "APPROVED" | "REJECTED";
-    reviewerId: string;
-    rejectionReason: string | null;
-    now: Date;
-  }): Promise<ManualPaymentSubmission | null> {
-    const updated = await this.prisma.manualPaymentSubmission.updateMany({
-      where: { id: input.id, status: { in: [...OPEN_MANUAL_PAYMENT_STATUSES] } },
-      data: {
-        status: input.status,
-        reviewedBy: input.reviewerId,
-        reviewedAt: input.now,
-        rejectionReason: input.status === "REJECTED" ? input.rejectionReason : null,
-      },
-    });
-    if (updated.count === 0) return null;
-    const row = await this.prisma.manualPaymentSubmission.findUnique({
-      where: { id: input.id },
-    });
-    return row ? toSubmissionDomain(row) : null;
+  async resolve(
+    input: {
+      id: string;
+      status: "APPROVED" | "REJECTED";
+      reviewerId: string;
+      rejectionReason: string | null;
+      now: Date;
+    },
+    transaction?: Prisma.TransactionClient,
+  ): Promise<ManualPaymentSubmission | null> {
+    const resolve = async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.manualPaymentSubmission.updateMany({
+        where: {
+          id: input.id,
+          status: { in: [...OPEN_MANUAL_PAYMENT_STATUSES] },
+        },
+        data: {
+          status: input.status,
+          reviewedBy: input.reviewerId,
+          reviewedAt: input.now,
+          rejectionReason:
+            input.status === "REJECTED" ? input.rejectionReason : null,
+        },
+      });
+      if (updated.count === 0) return null;
+      const row = await tx.manualPaymentSubmission.findUnique({
+        where: { id: input.id },
+      });
+      if (row)
+        await tx.auditLog.create({
+          data: {
+            actorId: input.reviewerId,
+            actorRole: "admin",
+            action: `${row.platform === "FINDLOVE" ? "findlove.admin" : "eventis"}.manual_payment.${input.status.toLowerCase()}`,
+            subjectType: "ManualPayment",
+            subjectId: row.id,
+            changes: {
+              target: row.reference,
+              reason: input.rejectionReason ?? "Payment receipt approved",
+              details: `${row.currency} ${row.amountMinor.toString()}`,
+              platform: row.platform,
+              userId: row.userId,
+            },
+          },
+        });
+      return row ? toSubmissionDomain(row) : null;
+    };
+    return transaction
+      ? resolve(transaction)
+      : this.prisma.$transaction(resolve);
+  }
+
+  transaction<T>(
+    action: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(action, { timeout: 10000 });
   }
 }

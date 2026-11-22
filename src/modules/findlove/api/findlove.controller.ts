@@ -8,21 +8,17 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
-import type {
-  AgeDocumentType,
-  AgeVerificationStatus,
-  LoveGender,
-  LoveInterestedIn,
-  LoveRelationshipGoal,
-} from "@prisma/client";
+import type { FastifyReply } from "fastify";
 import { z } from "zod";
 
+import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
 import {
-  CurrentUser,
-} from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -69,7 +65,14 @@ const profileSchema = z.object({
   bio: z.string().trim().max(160).nullable().optional(),
   interests: z.array(z.string().trim().min(1).max(30)).max(15).optional(),
   relationshipGoal: z
-    .enum(["FRIENDSHIP", "LONG_TERM", "SHORT_TERM", "MARRIAGE", "CASUAL", "NOT_SURE"])
+    .enum([
+      "FRIENDSHIP",
+      "LONG_TERM",
+      "SHORT_TERM",
+      "MARRIAGE",
+      "CASUAL",
+      "NOT_SURE",
+    ])
     .nullable()
     .optional(),
   lookingFor: z.string().trim().max(120).nullable().optional(),
@@ -132,7 +135,7 @@ export class FindLoveController {
     body: z.infer<typeof ageVerificationSchema>,
   ) {
     return this.findlove.submitAgeVerification(requireUser(user).userId, {
-      documentType: body.documentType as AgeDocumentType,
+      documentType: body.documentType,
       frontKey: body.frontKey,
       backKey: body.backKey,
       dateOfBirth: body.dateOfBirth,
@@ -146,6 +149,7 @@ export class FindLoveController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("findlove:manage")
   @Get("admin/age-verifications")
   listAgeVerifications(
     @Query(zodPipe(ageVerificationListSchema))
@@ -154,11 +158,30 @@ export class FindLoveController {
     return this.findlove.listAgeVerifications({
       page: query.page,
       limit: query.limit,
-      status: query.status as AgeVerificationStatus | undefined,
+      status: query.status,
     });
   }
 
   @Roles("admin")
+  @ConsoleAccess("findlove:manage")
+  @Get("admin/age-verifications/:id/documents/:side")
+  async verificationDocument(
+    @Param(zodPipe(z.object({ id: z.uuid(), side: z.enum(["front", "back"]) })))
+    params: { id: string; side: "front" | "back" },
+    @Res() reply: FastifyReply,
+  ) {
+    const file = await this.findlove.ageVerificationDocument(
+      params.id,
+      params.side,
+    );
+    reply
+      .header("content-type", file.contentType)
+      .header("cache-control", "private, no-store")
+      .send(file.data);
+  }
+
+  @Roles("admin")
+  @ConsoleAccess("findlove:manage")
   @Patch("admin/age-verifications/:id")
   reviewAgeVerification(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -189,10 +212,9 @@ export class FindLoveController {
   ) {
     return this.findlove.createProfile(requireUser(user).userId, {
       ...body,
-      gender: body.gender as LoveGender,
-      interestedIn: body.interestedIn as LoveInterestedIn,
-      relationshipGoal:
-        body.relationshipGoal as LoveRelationshipGoal | null | undefined,
+      gender: body.gender,
+      interestedIn: body.interestedIn,
+      relationshipGoal: body.relationshipGoal,
     });
   }
 
@@ -204,10 +226,9 @@ export class FindLoveController {
   ) {
     return this.findlove.updateProfile(requireUser(user).userId, {
       ...body,
-      gender: body.gender as LoveGender | undefined,
-      interestedIn: body.interestedIn as LoveInterestedIn | undefined,
-      relationshipGoal:
-        body.relationshipGoal as LoveRelationshipGoal | null | undefined,
+      gender: body.gender,
+      interestedIn: body.interestedIn,
+      relationshipGoal: body.relationshipGoal,
     });
   }
 
@@ -229,7 +250,7 @@ export class FindLoveController {
   ) {
     return this.findlove.discover(requireUser(user).userId, {
       ...query,
-      gender: query.gender as LoveGender | undefined,
+      gender: query.gender,
     });
   }
 
@@ -238,10 +259,7 @@ export class FindLoveController {
     @CurrentUser() user: AuthenticatedUser | undefined,
     @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>,
   ) {
-    return this.findlove.getProfileById(
-      requireUser(user).userId,
-      params.id,
-    );
+    return this.findlove.getProfileById(requireUser(user).userId, params.id);
   }
 
   @Post("likes")
@@ -300,7 +318,11 @@ export class FindLoveController {
     @Query(zodPipe(chatMessagesQuerySchema))
     query: z.infer<typeof chatMessagesQuerySchema>,
   ) {
-    return this.chats.listMessages(requireUser(user).userId, params.profileId, query);
+    return this.chats.listMessages(
+      requireUser(user).userId,
+      params.profileId,
+      query,
+    );
   }
 
   @Post("chats/:profileId/messages")
@@ -309,7 +331,11 @@ export class FindLoveController {
     @Param(zodPipe(chatParamSchema)) params: z.infer<typeof chatParamSchema>,
     @Body(zodPipe(chatMessageSchema)) body: z.infer<typeof chatMessageSchema>,
   ) {
-    return this.chats.sendMessage(requireUser(user).userId, params.profileId, body);
+    return this.chats.sendMessage(
+      requireUser(user).userId,
+      params.profileId,
+      body,
+    );
   }
 
   @Post("chats/:profileId/read")

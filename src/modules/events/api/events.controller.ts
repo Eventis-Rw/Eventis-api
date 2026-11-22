@@ -15,10 +15,11 @@ import {
 import type { FastifyRequest } from "fastify";
 import type {} from "@fastify/multipart";
 
+import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
 import {
-  CurrentUser,
-} from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -71,6 +72,12 @@ export class EventsController {
     private readonly presentation: EventPresentationService,
     private readonly shareEvent: ShareEventService,
   ) {}
+
+  @Public()
+  @Get("categories")
+  async categories() {
+    return { items: await this.listEvents.categories() };
+  }
 
   @Post()
   @Roles("organizer_owner")
@@ -155,6 +162,7 @@ export class EventsController {
     };
   }
 
+  @ConsoleAccess("events:read")
   @Get("admin/all")
   @Roles("admin")
   async listAllForAdmin(
@@ -291,7 +299,8 @@ export class EventsController {
   }
 }
 
-const EVENT_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EVENT_ID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function assertValidEventId(id: string): void {
   if (!EVENT_ID_REGEX.test(id)) {
@@ -317,7 +326,9 @@ async function parseMultipart(req: FastifyRequest): Promise<ParsedMultipart> {
         part.fieldname === "cover"
       ) {
         if (file) {
-          throw AppError.validation({ cover_image: ["Only one cover image may be uploaded"] });
+          throw AppError.validation({
+            cover_image: ["Only one cover image may be uploaded"],
+          });
         }
         const data = await part.toBuffer();
         file = {

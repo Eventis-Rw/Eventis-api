@@ -77,8 +77,11 @@ export class PaymentRepository {
     return rows.map(toInstallmentPlanDomain);
   }
 
-  async findInstallmentPlanById(id: string): Promise<InstallmentPlan | null> {
-    const row = await this.prisma.installmentPlan.findUnique({ where: { id } });
+  async findInstallmentPlanById(
+    id: string,
+    transaction: Prisma.TransactionClient = this.prisma,
+  ): Promise<InstallmentPlan | null> {
+    const row = await transaction.installmentPlan.findUnique({ where: { id } });
     return row ? toInstallmentPlanDomain(row) : null;
   }
 
@@ -499,12 +502,15 @@ export class PaymentRepository {
    * screenshot-based review never goes through), just the same subscription
    * creation `activateSubscription` above would do.
    */
-  async activateFindLoveFromManualPayment(input: {
-    userId: string;
-    plan: InstallmentPlan;
-    now: Date;
-  }): Promise<ServiceSubscription> {
-    return this.prisma.$transaction(async (tx) => {
+  async activateFindLoveFromManualPayment(
+    input: {
+      userId: string;
+      plan: InstallmentPlan;
+      now: Date;
+    },
+    transaction?: Prisma.TransactionClient,
+  ): Promise<ServiceSubscription> {
+    const activate = async (tx: Prisma.TransactionClient) => {
       const current = await tx.serviceSubscription.findFirst({
         where: {
           userId: input.userId,
@@ -529,13 +535,17 @@ export class PaymentRepository {
           expiresAt,
           startsAt: input.now,
           priceMinor: input.plan.priceMinor,
-          ...(current?.permissionsSnapshot && current.accountType === input.plan.accountType
+          ...(current?.permissionsSnapshot &&
+          current.accountType === input.plan.accountType
             ? { permissionsSnapshot: current.permissionsSnapshot }
             : {}),
         },
       });
       return toSubscriptionDomain(created);
-    });
+    };
+    return transaction
+      ? activate(transaction)
+      : this.prisma.$transaction(activate);
   }
 
   async findActiveSubscription(

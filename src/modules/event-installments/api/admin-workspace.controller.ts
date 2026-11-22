@@ -9,7 +9,10 @@ import {
 import type { z } from "zod";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import {
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -23,6 +26,7 @@ import type { Command } from "../domain/admin-workspace.types.js";
 import { adminInstallmentEnvelope } from "./admin-workspace.dto.js";
 @Controller({ path: "admin/installment-workspace", version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
+@ConsoleAccess("installments:manage")
 @Roles("admin")
 export class AdminWorkspaceController {
   constructor(private readonly workspace: AdminWorkspaceService) {}

@@ -7,15 +7,21 @@ import { StorageModule } from "../../infrastructure/storage/storage.module.js";
 import { PlatformModule } from "../platform/index.js";
 
 import { AdminDashboardController } from "./api/admin-dashboard.controller.js";
+import { ConsoleSettingsController } from "./api/console-settings.controller.js";
 import { AdminDashboardService } from "./application/admin-dashboard.service.js";
+import { ConsoleSettingsService } from "./application/console-settings.service.js";
 import { AdminDashboardRepository } from "./infrastructure/admin-dashboard.repository.js";
+import { ConsoleSettingsRepository } from "./infrastructure/console-settings.repository.js";
+
 @Module({
   imports: [PrismaModule, StorageModule, PlatformModule],
-  controllers: [AdminDashboardController],
+  controllers: [AdminDashboardController, ConsoleSettingsController],
   providers: [
     AuthGuard,
     RolesGuard,
     AdminDashboardRepository,
+    ConsoleSettingsRepository,
+    ConsoleSettingsService,
     AdminDashboardService,
   ],
 })

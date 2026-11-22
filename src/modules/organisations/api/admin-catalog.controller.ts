@@ -1,7 +1,10 @@
 import { Body, Controller, Get, Put, UseGuards } from "@nestjs/common";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import {
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -11,6 +14,7 @@ import { RolesGuard } from "../../../common/guards/roles.guard.js";
 import { AdminCatalogService } from "../application/admin-catalog.service.js";
 @Controller({ path: "admin/organiser-catalog", version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
+@ConsoleAccess("catalog:manage")
 @Roles("admin")
 export class AdminCatalogController {
   constructor(private readonly catalog: AdminCatalogService) {}

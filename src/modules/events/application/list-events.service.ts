@@ -16,6 +16,10 @@ export interface ListEventsInput {
 export class ListEventsService {
   constructor(private readonly events: EventRepository) {}
 
+  categories() {
+    return this.events.listCategories();
+  }
+
   async execute(input: ListEventsInput) {
     const status = input.includeNonPublished
       ? input.status

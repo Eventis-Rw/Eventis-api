@@ -3,7 +3,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import type {
   AgeDocumentType,
   AgeVerificationStatus,
-  FindLoveAccountType,
   LoveGender,
   LoveInterestedIn,
   LoveRelationshipGoal,
@@ -13,12 +12,12 @@ import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, type Env } from "../../../config/env.js";
 import { StorageService } from "../../../infrastructure/storage/storage.service.js";
-import type { LoveProfileWithPhotos } from "../infrastructure/findlove.repository.js";
 import {
   adult,
   defaultPermissions,
   type Permissions,
 } from "../domain/admin-membership.js";
+import type { LoveProfileWithPhotos } from "../infrastructure/findlove.repository.js";
 import { FindLoveRepository } from "../infrastructure/findlove.repository.js";
 import {
   ageFromDate,
@@ -33,6 +32,15 @@ const MIN_AGE = 18;
 
 @Injectable()
 export class FindLoveService {
+  async ageVerificationDocument(id: string, side: "front" | "back") {
+    const verification = await this.findlove.ageVerificationDocument(id);
+    const key =
+      side === "front" ? verification?.frontKey : verification?.backKey;
+    if (!key) throw AppError.notFound("Verification document");
+    const file = await this.storage.getPrivateObject(key);
+    if (!file) throw AppError.notFound("Verification document");
+    return file;
+  }
   constructor(
     private readonly findlove: FindLoveRepository,
     private readonly clock: Clock,
@@ -82,7 +90,10 @@ export class FindLoveService {
       dateOfBirth: input.dateOfBirth ?? null,
       adultConfirmedAt: this.clock.now(),
     });
-    if (this.env.FINDLOVE_AGE_AUTO_APPROVE && this.env.NODE_ENV !== "production") {
+    if (
+      this.env.FINDLOVE_AGE_AUTO_APPROVE &&
+      this.env.NODE_ENV !== "production"
+    ) {
       // DEV ONLY: stand in for the admin reviewer so the flow can be tested end to end.
       const approved = await this.findlove.reviewAgeVerification({
         id: row.id,
@@ -116,8 +127,13 @@ export class FindLoveService {
     row: Awaited<ReturnType<FindLoveRepository["getLatestAgeVerification"]>>,
   ) {
     if (!row) return row;
-    if (row.status !== "PROCESSING" && row.status !== "MANUAL_REVIEW") return row;
-    if (!this.env.FINDLOVE_AGE_AUTO_APPROVE || this.env.NODE_ENV === "production") return row;
+    if (row.status !== "PROCESSING" && row.status !== "MANUAL_REVIEW")
+      return row;
+    if (
+      !this.env.FINDLOVE_AGE_AUTO_APPROVE ||
+      this.env.NODE_ENV === "production"
+    )
+      return row;
     if (!row.dateOfBirth || ageFromDate(row.dateOfBirth) < MIN_AGE) return row;
     const approved = await this.findlove.reviewAgeVerification({
       id: row.id,
@@ -412,7 +428,10 @@ export class FindLoveService {
     if (!reciprocal) {
       return { liked: true, matched: false, connectionId: null };
     }
-    const before = await this.findlove.findConnectionBetween(profile.id, target.id);
+    const before = await this.findlove.findConnectionBetween(
+      profile.id,
+      target.id,
+    );
     const connection = await this.findlove.upsertAcceptedConnection(
       profile.id,
       target.id,
@@ -580,7 +599,7 @@ export class FindLoveService {
       // payment, so discover/connections/chat can be exercised end to end.
       await this.findlove.grantDevMembership(
         userId,
-        (facts.user.findLoveProfileType as unknown as FindLoveAccountType) ??
+        (facts.user.findLoveProfileType) ??
           "PUBLIC",
         this.clock.now(),
       );
@@ -606,9 +625,7 @@ function normalizeUsername(value: string): string {
   const username = value.trim().toLowerCase();
   if (!/^[a-z0-9._]{3,20}$/.test(username)) {
     throw AppError.validation({
-      username: [
-        "Use 3-20 lowercase letters, numbers, dots or underscores",
-      ],
+      username: ["Use 3-20 lowercase letters, numbers, dots or underscores"],
     });
   }
   return username;

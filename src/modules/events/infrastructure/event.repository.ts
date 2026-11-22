@@ -12,10 +12,16 @@ const eventWithSaves = {
   _count: { select: { savedBy: true } },
 } satisfies Prisma.EventInclude;
 
-
 @Injectable()
 export class EventRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  listCategories() {
+    return this.prisma.category.findMany({
+      select: { id: true, slug: true, name: true },
+      orderBy: [{ position: "asc" }, { name: "asc" }],
+    });
+  }
 
   async create(input: {
     title: string;
@@ -142,7 +148,6 @@ export class EventRepository {
   async delete(eventId: string): Promise<void> {
     await this.prisma.event.delete({ where: { eventId } });
   }
-
 
   async incrementViews(eventId: string): Promise<Event> {
     const row = await this.prisma.event.update({

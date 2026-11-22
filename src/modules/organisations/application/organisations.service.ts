@@ -61,8 +61,12 @@ export class OrganisationsService {
   }
 
   async listMine(userId: string) {
-    const rows = await this.organisations.listForUser(userId);
+    const [rows, activeOrganisationId] = await Promise.all([
+      this.organisations.listForUser(userId),
+      this.organisations.activeOrganisationId(userId),
+    ]);
     return {
+      activeOrganisationId,
       items: rows.map((row) => ({
         ...toOrganisationSummary(row.organisation),
         role: row.role,
@@ -169,10 +173,7 @@ export class OrganisationsService {
     return { removed: true };
   }
 
-  async setActiveOrganisation(
-    userId: string,
-    organisationId: string | null,
-  ) {
+  async setActiveOrganisation(userId: string, organisationId: string | null) {
     if (organisationId) {
       await this.requireMembership(organisationId, userId);
     }
@@ -209,9 +210,7 @@ export class OrganisationsService {
           categoryIds: ["Choose no more than 5 categories"],
         });
       }
-      const count = await this.organisations.countCategories(
-        input.categoryIds,
-      );
+      const count = await this.organisations.countCategories(input.categoryIds);
       if (count !== new Set(input.categoryIds).size) {
         throw AppError.validation({
           categoryIds: ["One or more categories do not exist"],
@@ -303,12 +302,13 @@ export class OrganisationsService {
     limit: number;
     status?: BusinessVerificationStatus | undefined;
   }) {
-    const { items, total } =
-      await this.organisations.listBusinessVerifications({
+    const { items, total } = await this.organisations.listBusinessVerifications(
+      {
         skip: (input.page - 1) * input.limit,
         take: input.limit,
         status: input.status,
-      });
+      },
+    );
     return {
       items: items.map(toBusinessVerification),
       page: input.page,
@@ -396,12 +396,8 @@ export class OrganisationsService {
       ...(input.durationDays !== undefined
         ? { durationDays: input.durationDays }
         : {}),
-      ...(input.postQuota !== undefined
-        ? { postQuota: input.postQuota }
-        : {}),
-      ...(input.features !== undefined
-        ? { features: input.features }
-        : {}),
+      ...(input.postQuota !== undefined ? { postQuota: input.postQuota } : {}),
+      ...(input.features !== undefined ? { features: input.features } : {}),
       ...(input.recommended !== undefined
         ? { recommended: input.recommended }
         : {}),
@@ -475,10 +471,26 @@ export class OrganisationsService {
     );
   }
 
+  async listAdminSubscriptions(input: { page: number; limit: number }) {
+    const { items, total } = await this.organisations.listAdminSubscriptions(
+      (input.page - 1) * input.limit,
+      input.limit,
+    );
+    return {
+      ...input,
+      total,
+      items: items.map((row) => ({
+        ...toSubscriptionResponse(row),
+        organiser:
+          row.user.organizationName || row.user.displayName || row.user.phone,
+      })),
+    };
+  }
+
   async activateSubscription(adminUserId: string, id: string) {
-    void adminUserId;
     const row = await this.organisations.activateSubscription({
       id,
+      actorId: adminUserId,
       now: this.clock.now(),
     });
     if (!row) throw AppError.notFound("That organiser subscription");
@@ -506,18 +518,31 @@ export class OrganisationsService {
    * manual-payments review flow; called only after that flow has already
    * confirmed the submission is eligible to approve.
    */
-  async activateFromManualPayment(userId: string, planId: string, now: Date) {
-    const plan = await this.organisations.findPlan(planId);
+  async activateFromManualPayment(
+    userId: string,
+    planId: string,
+    now: Date,
+    transaction?: Prisma.TransactionClient,
+    terms?: {
+      durationDays: number;
+      postQuota: number | null;
+      priceMinor: bigint;
+    },
+  ) {
+    const plan = await this.organisations.findPlan(planId, transaction);
     if (!plan || !plan.active) {
       throw AppError.validation({
         organiserPlanId: ["That organiser plan is no longer available."],
       });
     }
-    const row = await this.organisations.activateFromManualPayment({
-      userId,
-      plan,
-      now,
-    });
+    const row = await this.organisations.activateFromManualPayment(
+      {
+        userId,
+        plan: terms ? { ...plan, ...terms } : plan,
+        now,
+      },
+      transaction,
+    );
     return toSubscriptionResponse(row);
   }
 
@@ -580,7 +605,10 @@ export class OrganisationsService {
       status: input.status,
     });
     return {
-      items: items.map(toPromotionResponse),
+      items: items.map((row) => ({
+        ...toPromotionResponse(row),
+        eventTitle: row.event.title,
+      })),
       page: input.page,
       limit: input.limit,
       total,
@@ -628,15 +656,10 @@ export class OrganisationsService {
     if (!row || row.ownerId !== userId) {
       throw AppError.notFound("That promotion");
     }
-    return toPromotionResponse(
-      await this.organisations.cancelPromotion(id),
-    );
+    return toPromotionResponse(await this.organisations.cancelPromotion(id));
   }
 
-  private async requireMembership(
-    organisationId: string,
-    userId: string,
-  ) {
+  private async requireMembership(organisationId: string, userId: string) {
     const member = await this.organisations.findMembership(
       organisationId,
       userId,

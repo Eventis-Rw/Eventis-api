@@ -11,7 +11,10 @@ import {
 import { z } from "zod";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import {
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -53,46 +56,68 @@ const actorId = (actor: AuthenticatedUser | undefined) => {
 @Roles("admin")
 export class AdminDashboardController {
   constructor(private readonly dashboard: AdminDashboardService) {}
-  @Get("findlove/photos") photos() {
+  @ConsoleAccess("findlove:manage")
+  @Get("findlove/photos")
+  photos() {
     return this.dashboard.photos();
   }
-  @Patch("findlove/photos/:id") moderate(
+  @ConsoleAccess("findlove:manage")
+  @Patch("findlove/photos/:id")
+  moderate(
     @Param(zodPipe(params)) p: z.infer<typeof params>,
     @Body(zodPipe(photo)) b: z.infer<typeof photo>,
     @CurrentUser() actor: AuthenticatedUser | undefined,
   ) {
     return this.dashboard.moderate(p.id, b.status, b.reason, actorId(actor));
   }
-  @Get("findlove/support") support() {
+  @ConsoleAccess("findlove:manage")
+  @Get("findlove/support")
+  support() {
     return this.dashboard.support();
   }
-  @Post("findlove/support/:id") @HttpCode(200) updateSupport(
+  @ConsoleAccess("findlove:manage")
+  @Post("findlove/support/:id")
+  @HttpCode(200)
+  updateSupport(
     @Param(zodPipe(params)) p: z.infer<typeof params>,
     @Body(zodPipe(support)) b: z.infer<typeof support>,
     @CurrentUser() actor: AuthenticatedUser | undefined,
   ) {
     return this.dashboard.updateSupport({ id: p.id, ...b }, actorId(actor));
   }
-  @Get("findlove/staff") staff() {
+  @ConsoleAccess("findlove:manage")
+  @Get("findlove/staff")
+  staff() {
     return this.dashboard.staff();
   }
-  @Get("findlove/notifications") notifications() {
+  @ConsoleAccess("findlove:manage")
+  @Get("findlove/notifications")
+  notifications() {
     return this.dashboard.notifications();
   }
-  @Post("findlove/notifications/:id/preview") @HttpCode(200) preview(
+  @ConsoleAccess("findlove:manage")
+  @Post("findlove/notifications/:id/preview")
+  @HttpCode(200)
+  preview(
     @Param(zodPipe(z.object({ id: z.string().regex(/^[a-z_]{1,80}$/) })))
     p: { id: string },
     @CurrentUser() actor: AuthenticatedUser | undefined,
   ) {
     return this.dashboard.preview(p.id, actorId(actor));
   }
-  @Get("audit-logs") audit() {
+  @ConsoleAccess("audit:read")
+  @Get("audit-logs")
+  audit() {
     return this.dashboard.audit();
   }
-  @Get("reports") reports() {
+  @ConsoleAccess("reports:manage")
+  @Get("reports")
+  reports() {
     return this.dashboard.reports();
   }
-  @Patch("reports/:id") resolve(
+  @ConsoleAccess("reports:manage")
+  @Patch("reports/:id")
+  resolve(
     @Param(zodPipe(params)) p: z.infer<typeof params>,
     @Body(zodPipe(outcome)) b: z.infer<typeof outcome>,
     @CurrentUser() actor: AuthenticatedUser | undefined,

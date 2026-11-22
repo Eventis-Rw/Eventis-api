@@ -139,6 +139,8 @@ model User {
   lastName                String?           @map("last_name") @db.VarChar(100)
   email                   String?           @unique @db.VarChar(255)
   accountType             AccountType       @default(CUSTOMER) @map("account_type")
+  consoleRoleId           String?           @map("console_role_id") @db.Uuid
+  consoleRole             ConsoleRole?      @relation(fields: [consoleRoleId], references: [id], onDelete: Restrict)
   role                    UserRole          @default(CUSTOMER)
   organizationName        String?           @map("organization_name") @db.VarChar(160)
   organizationDescription String?           @map("organization_description") @db.Text
@@ -223,6 +225,7 @@ model User {
   eventInstallmentLateFeeWaivers   EventInstallmentLateFee[]      @relation("EventInstallmentLateFeeWaiver")
 
   @@index([lastSeenAt], map: "users_last_seen_idx")
+  @@index([consoleRoleId], map: "users_console_role_idx")
   @@map("users")
 }
 
@@ -2021,4 +2024,23 @@ model EmailSignInCode {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   @@index([email, createdAt])
   @@map("email_sign_in_codes")
+}
+
+model ConsoleRole {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(80)
+  permissions String[]
+  users       User[]
+
+  @@map("console_roles")
+}
+
+model EventisGlobalSettings {
+  id           String  @id @default("global")
+  displayName  String  @default("Eventis") @map("display_name") @db.VarChar(80)
+  supportEmail String? @map("support_email") @db.VarChar(254)
+  announcement String? @db.VarChar(500)
+  revision     Int     @default(0)
+
+  @@map("eventis_global_settings")
 }
