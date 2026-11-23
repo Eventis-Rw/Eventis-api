@@ -37,6 +37,7 @@ import { ManualPaymentRepository } from "./infrastructure/manual-payment.reposit
 import { PaymentRepository } from "./infrastructure/payment.repository.js";
 import { AggregatorPaymentProvider } from "./infrastructure/providers/aggregator-payment.provider.js";
 import { FakePaymentProvider } from "./infrastructure/providers/fake-payment.provider.js";
+import { ManualOnlyPaymentProvider } from "./infrastructure/providers/manual-only-payment.provider.js";
 import {
   PAYMENT_GATEWAY,
   type PaymentProvider,
@@ -75,6 +76,7 @@ const FINDLOVE_COMPLETION_HANDLER = Symbol("FINDLOVE_COMPLETION_HANDLER");
     ManualPaymentMethodsService,
     ManualPaymentsService,
     FakePaymentProvider,
+    ManualOnlyPaymentProvider,
     AggregatorPaymentProvider,
     {
       provide: FINDLOVE_COMPLETION_HANDLER,
@@ -98,13 +100,23 @@ const FINDLOVE_COMPLETION_HANDLER = Symbol("FINDLOVE_COMPLETION_HANDLER");
     },
     {
       provide: PAYMENT_GATEWAY,
-      inject: [ENV, FakePaymentProvider, AggregatorPaymentProvider],
+      inject: [
+        ENV,
+        FakePaymentProvider,
+        AggregatorPaymentProvider,
+        ManualOnlyPaymentProvider,
+      ],
       useFactory: (
         env: Env,
         fake: FakePaymentProvider,
         aggregator: AggregatorPaymentProvider,
+        manual: ManualOnlyPaymentProvider,
       ): PaymentProvider =>
-        env.PAYMENT_PROVIDER === "aggregator" ? aggregator : fake,
+        env.PAYMENT_PROVIDER === "manual"
+          ? manual
+          : env.PAYMENT_PROVIDER === "aggregator"
+            ? aggregator
+            : fake,
     },
   ],
   exports: [PaymentCompletionRegistry, PaymentCollectionsService],

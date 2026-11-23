@@ -29,8 +29,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   await runReminders();
-  const timer = setInterval(() => void runReminders(), 15 * 60 * 1000);
-  timer.unref();
+  setInterval(() => void runReminders(), 15 * 60 * 1000);
 }
 
 void bootstrap();
