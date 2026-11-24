@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { ERROR_CODES } from "@eventis/contracts";
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { HttpException, Inject, Injectable } from "@nestjs/common";
+import { HttpException, Inject, Injectable, Logger } from "@nestjs/common";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
