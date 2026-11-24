@@ -152,6 +152,7 @@ model User {
   displayName             String?           @map("display_name") @db.VarChar(60)
   avatarUrl               String?           @map("avatar_url") @db.VarChar(500)
   pinHash                 String?           @map("pin_hash") @db.VarChar(128)
+  adminPasswordHash       String?           @map("admin_password_hash") @db.VarChar(255)
   findLoveProfileType     LoveProfileType   @default(PRIVATE) @map("find_love_profile_type")
   username                String?           @unique @db.VarChar(30)
   phoneVerifiedAt         DateTime?         @map("phone_verified_at") @db.Timestamptz(6)
@@ -2043,4 +2044,12 @@ model EventisGlobalSettings {
   revision     Int     @default(0)
 
   @@map("eventis_global_settings")
+}
+
+model AdminLoginRateLimit {
+  key String @id @db.VarChar(80)
+  attempts Int @default(0)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  @@index([expiresAt])
+  @@map("admin_login_rate_limits")
 }

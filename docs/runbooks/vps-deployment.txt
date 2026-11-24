@@ -36,3 +36,11 @@ Operations:
   sudo docker compose --env-file compose.env exec -T db pg_dump -U eventis eventis > backup.sql
 
 Back up database and upload volumes off the VPS. Do not run docker compose down -v against this deployment. Initial catalog seed creates no users, sample events or payment recipient details. Configure actual organiser plans/payment methods and administrator access separately.
+
+Administrator bootstrap (after the admin-email-password migration):
+  Set ADMIN_SEED_EMAIL and ADMIN_SEED_PASSWORD privately in ~/eventis/api.env.
+  cd ~/eventis
+  sudo docker compose --env-file compose.env run --rm --no-deps api bun run db:seed:admin
+  Sign in to the real admin console using that email and password; no phone/PIN is needed.
+  Ordinary reruns are idempotent. Password changes require ADMIN_SEED_ROTATE_PASSWORD=true.
+  Do not run the general demo data seed to create an administrator.

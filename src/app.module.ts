@@ -40,6 +40,8 @@ import { SupportModule } from "./modules/support/index.js";
               "req.headers.cookie",
               'req.headers["idempotency-key"]',
               "req.body.phone",
+              "req.body.password",
+              "req.body.adminPassword",
               "req.body.code",
               "req.body.payerPhone",
               "req.body.refreshToken",

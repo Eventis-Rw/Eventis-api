@@ -10,6 +10,7 @@ import { AuthController } from "./api/auth.controller.js";
 import { JwtAuthGuard } from "./api/jwt-auth.guard.js";
 import { UsersController } from "./api/users.controller.js";
 import { AccountTypeService } from "./application/account-type.service.js";
+import { AdminLoginService } from "./application/admin-login.service.js";
 import { AdminUsersService } from "./application/admin-users.service.js";
 import { AlternativeAuthService } from "./application/alternative-auth.service.js";
 import { GetMeService } from "./application/get-me.service.js";
@@ -21,6 +22,7 @@ import { RequestOtpService } from "./application/request-otp.service.js";
 import { UpdateProfileService } from "./application/update-profile.service.js";
 import { VerifyAccessTokenService } from "./application/verify-access-token.service.js";
 import { VerifyOtpService } from "./application/verify-otp.service.js";
+import { AdminAuthRepository } from "./infrastructure/admin-auth.repository.js";
 import {
   OtpRepository,
   RefreshSessionRepository,
@@ -43,6 +45,8 @@ import { TokenService } from "./infrastructure/token.service.js";
     AccountTypeService,
     AdminUsersService,
     LoginService,
+    AdminLoginService,
+    AdminAuthRepository,
     AlternativeAuthService,
     UpdateProfileService,
     LookupUsersService,

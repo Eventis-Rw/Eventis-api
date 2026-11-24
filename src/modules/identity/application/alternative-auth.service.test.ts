@@ -213,13 +213,19 @@ describe("Brevo email OTP delivery", () => {
         sender: { email: string; name: string };
         to: { email: string }[];
         textContent: string;
+        htmlContent: string;
+        subject: string;
       };
       expect(body.sender).toEqual({
         email: "auth@example.com",
         name: "Eventis",
       });
       expect(body.to).toEqual([{ email: "aline@example.com" }]);
-      expect(body.textContent).toMatch(/code is \d{6}\./);
+      const otp = body.textContent.match(/code is (\d{6})\./)?.[1];
+      expect(otp).toBeDefined();
+      expect(body.htmlContent).toContain(otp!);
+      expect(body.htmlContent).toContain("You’re almost in.");
+      expect(body.subject).toBe("Verify your email with Eventis");
       expect(result.retryAfterSeconds).toBe(60);
       expect(result).not.toHaveProperty("code");
       expect(f.getAccount()).toBeNull();

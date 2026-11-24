@@ -260,6 +260,7 @@ export class UserRepository {
       if (claimedOtp.count !== 1) throw new Error("otp already used");
 
       let userRow = await tx.user.findUnique({ where: { phone: input.phone } });
+      if (userRow?.role === "ADMIN") throw new Error("admin password required");
       if (userRow && otp.purpose === "SIGN_UP") {
         throw new Error("phone already registered");
       }

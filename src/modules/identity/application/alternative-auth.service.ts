@@ -9,6 +9,7 @@ import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, type Env } from "../../../config/env.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import { generateOtpCode, otpMatches } from "../domain/otp.js";
+import { buildOtpEmail } from "../emails/otp-email.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";
 import { TokenService } from "../infrastructure/token.service.js";
 import {
@@ -80,7 +81,7 @@ export class AlternativeAuthService {
       const eligible =
         input.purpose === "register"
           ? !user
-          : Boolean(user?.emailVerifiedAt && user.status === "ACTIVE");
+          : Boolean(user?.emailVerifiedAt && user.status === "ACTIVE" && user.role !== "ADMIN");
       await tx.emailSignInCode.updateMany({
         where: { email, consumedAt: null },
         data: { consumedAt: now },
@@ -107,8 +108,7 @@ export class AlternativeAuthService {
           body: JSON.stringify({
             sender: { email: senderEmail, name: senderName },
             to: [{ email }],
-            subject: "Your Eventis verification code",
-            textContent: `Your Eventis code is ${code}. It expires in 5 minutes. If you did not request it, ignore this email.`,
+            ...buildOtpEmail(code, input.purpose),
           }),
           signal: AbortSignal.timeout(10_000),
         });
@@ -168,7 +168,7 @@ export class AlternativeAuthService {
       if (challenge.purpose === "register" && existing) return null;
       if (
         challenge.purpose === "login" &&
-        (!existing?.emailVerifiedAt || existing.status !== "ACTIVE")
+        (!existing?.emailVerifiedAt || existing.status !== "ACTIVE" || existing.role === "ADMIN")
       )
         return null;
       const user =
@@ -292,7 +292,7 @@ export class AlternativeAuthService {
 
   private async session(userId: string) {
     const user = await this.users.findById(userId);
-    if (!user || user.status !== "ACTIVE" || user.deletedAt)
+    if (!user || user.status !== "ACTIVE" || user.deletedAt || user.role === "ADMIN")
       throw AppError.unauthenticated();
     const refresh = this.tokens.issueRefreshToken();
     const roles = toAuthRoles(user);
