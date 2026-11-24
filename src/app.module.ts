@@ -15,6 +15,7 @@ import { EventInstallmentsModule } from "./modules/event-installments/index.js";
 import { EventsModule } from "./modules/events/index.js";
 import { FindLoveModule } from "./modules/findlove/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
+import { LiveModule } from "./modules/live/live.module.js";
 import { OrganisationsModule } from "./modules/organisations/index.js";
 import { PaymentsModule } from "./modules/payments/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
@@ -70,6 +71,7 @@ import { SupportModule } from "./modules/support/index.js";
     EngagementModule,
     OrganisationsModule,
     SettingsModule,
+    LiveModule,
     AnalyticsModule,
     FindLoveModule,
     SupportModule,

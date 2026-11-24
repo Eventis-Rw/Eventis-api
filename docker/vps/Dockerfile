@@ -6,7 +6,7 @@ COPY package.json bun.lock ./
 COPY vendor ./vendor
 COPY prisma ./prisma
 RUN bun install
-COPY . .
+COPY --chown=node:node . .
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx && bun run build
 ENV NODE_ENV=production
 USER node

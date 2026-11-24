@@ -74,3 +74,6 @@ docker/docker-compose.override.yml
 # After the first npm publish, commit a real bun.lock and delete these lines.
 bun.lock
 bun.lockb
+
+# CI checkout of public shared packages
+.shared/
