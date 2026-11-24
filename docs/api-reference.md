@@ -10,13 +10,25 @@ The interactive Swagger UI is served at `http://localhost:3000/docs`; its OpenAP
 
 Swagger UI loads its presentation bundle from `unpkg.com`, so the UI needs an internet connection. The JSON specification remains available directly at `/openapi.json` and can also be imported into Postman or another OpenAPI client.
 
+## Event post comments
+
+`GET /api/v1/events/{id}/comments` lists comments using `page` and `limit` (maximum 100). Authenticated users can post with `POST /api/v1/events/{id}/comments` and edit their own comment with `PATCH /api/v1/comments/{id}`; both accept `{ "body": "..." }` (1–2000 characters after trimming). Authors and post owners can delete comments with `DELETE /api/v1/comments/{id}`; only the author can edit.
+
 ## Authentication test flow
 
-1. Call `POST /api/v1/auth/signup` with `phone`, `username`, and a five-digit `pin`. `accountType` is optional and defaults to `CUSTOMER` (`POSTER` is also supported).
+1. Call `POST /api/v1/auth/signup` with `phone`, `username`, and a five-digit `pin`. `accountType` defaults to `CUSTOMER`; organiser access requires an approved application.
 2. Read the six-digit code from the SMS provider configured in `.env`. `SMS_PROVIDER=fake` records messages only in memory and deliberately does not log the OTP, so it cannot complete an interactive HTTP signup flow. For a real phone test, configure Africa's Talking sandbox; for automated checks, the fake provider is inspectable by the test harness.
 3. Call `POST /api/v1/auth/signup/verify-otp` with `phone` and the six-digit `code`. The response contains `tokens.accessToken` and `tokens.refreshToken`.
 4. For login, send `phone` and the five-digit `pin` in the request body. No device headers or device credentials are used.
 5. In Swagger UI, click **Authorize** and paste the access token (without adding `Bearer `). Then try `GET /api/v1/auth/me`, `PATCH /api/v1/users/me`, and `POST /api/v1/auth/logout`.
+
+## Organiser applications
+
+1. A signed-in customer sends `POST /api/v1/organiser-applications` with `name`, `description`, `activities`, `location`, and optional `website`. The application begins in `PENDING_PAYMENT`. `GET /api/v1/me/organiser-application` returns the latest application in an `application` property.
+2. The customer submits a manual organiser payment and receipt. An administrator independently verifies it with the provider and calls `POST /api/v1/admin/manual-payments/{id}/approve` with `{ "verified_transaction_id": "..." }`. Provider transaction IDs must be unique; verification moves the linked application to `IN_REVIEW` and does not grant organiser access.
+3. `GET /api/v1/admin/organiser-applications` lists the applications and payment details. An administrator submits `{ "status": "APPROVED" }` or `{ "status": "REJECTED", "rejectionReason": "..." }` to `POST /api/v1/admin/organiser-applications/{id}/review`. Approval activates the purchased plan and organiser role; rejection preserves the reason and permits a new application with a new verified payment.
+
+Existing organiser accounts retain access. Existing pending receipts must be linked by completing the new application before they can be verified. No client-side payment result is accepted as verification.
 
 ## Route inventory
 
@@ -160,7 +172,9 @@ audio and video formats. Optional multipart fields `content`, `replyToId`,
 `clientMessageId`, `durationMs`, `width` and `height` attach a caption, reply
 target, retry key and media metadata to the new message. Files are stored
 privately and downloads at `GET /api/v1/chat/attachments/{id}/content` require
-conversation membership. Audio uploads become `VOICE` messages and videos are
+conversation membership and a current bearer token. Mobile clients refresh an
+expired token when downloading, verify the downloaded byte count against the
+attachment metadata, and offer a retry when a download fails. Audio uploads become `VOICE` messages and videos are
 stored as `FILE` messages with a `video/*` MIME type. Storage uses the existing
 `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID` and
 `STORAGE_SECRET_ACCESS_KEY` configuration.

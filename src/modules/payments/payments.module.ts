@@ -13,6 +13,7 @@ import {
   InstallmentsController,
 } from "./api/installments.controller.js";
 import { AdminManualPaymentMethodsController } from "./api/manual-payment-methods.controller.js";
+import { OrganiserApplicationsController } from "./api/organiser-applications.controller.js";
 import {
   AdminManualPaymentsController,
   ManualPaymentsController,
@@ -25,6 +26,7 @@ import { AccountSubscriptionService } from "./application/account-subscription.s
 import { InstallmentPlansService } from "./application/installment-plans.service.js";
 import { ManualPaymentMethodsService } from "./application/manual-payment-methods.service.js";
 import { ManualPaymentsService } from "./application/manual-payments.service.js";
+import { OrganiserApplicationsService } from "./application/organiser-applications.service.js";
 import { PaymentActivationService } from "./application/payment-activation.service.js";
 import { PaymentCollectionsService } from "./application/payment-collections.service.js";
 import {
@@ -62,6 +64,7 @@ const FINDLOVE_COMPLETION_HANDLER = Symbol("FINDLOVE_COMPLETION_HANDLER");
     ManualPaymentsController,
     AdminManualPaymentsController,
     AdminManualPaymentMethodsController,
+    OrganiserApplicationsController,
   ],
   providers: [
     PaymentRepository,
@@ -75,6 +78,7 @@ const FINDLOVE_COMPLETION_HANDLER = Symbol("FINDLOVE_COMPLETION_HANDLER");
     ManualPaymentRepository,
     ManualPaymentMethodsService,
     ManualPaymentsService,
+    OrganiserApplicationsService,
     FakePaymentProvider,
     ManualOnlyPaymentProvider,
     AggregatorPaymentProvider,

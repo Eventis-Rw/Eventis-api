@@ -548,6 +548,10 @@ export class OrganisationRepository {
       startsAt.getTime() + durationDays * 24 * 60 * 60 * 1000,
     );
     return this.prisma.$transaction(async (tx) => {
+      const owner = await tx.user.findUniqueOrThrow({ where: { id: existing.userId }, select: { accountType: true } });
+      if (owner.accountType !== "POSTER") {
+        throw AppError.forbidden("Organiser access requires an approved application.");
+      }
       const { count } = await tx.organiserSubscription.updateMany({
         where: { id: input.id, status: "PENDING" },
         data: {

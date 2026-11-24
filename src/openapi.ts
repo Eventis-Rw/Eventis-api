@@ -78,6 +78,25 @@ const paths = {
 };
 
 Object.assign(paths, {
+  "/api/v1/chat/users/search": {
+    get: {
+      tags: ["Chat"],
+      summary: "Search public Eventis users by username",
+      description: "Returns active public profiles matching a username, excluding the authenticated user and either side of a block. Results are paginated, rate limited, and never include phone numbers or email addresses. Omit query to browse discoverable profiles.",
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: "query", in: "query", required: false, schema: { type: "string", maxLength: 33 }, description: "Username substring; accepts an optional leading @." },
+        { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } },
+        { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+      ],
+      responses: {
+        "200": response("Discoverable users", { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, username: { type: "string" }, displayName: { type: ["string", "null"] }, firstName: { type: ["string", "null"] }, lastName: { type: ["string", "null"] }, avatarUrl: { type: ["string", "null"] } } } }, page: { type: "integer" }, limit: { type: "integer" }, hasMore: { type: "boolean" } } }),
+        "401": eventAuthError,
+        "422": eventValidationError,
+        "429": response("Search rate limit exceeded", ref("ApiError")),
+      },
+    },
+  },
   "/api/v1/chat/contacts/sync": {"post":{"tags":["Chat"],"summary":"Match device contacts with registered users","description":"Accepts up to 200 client-provided contacts, normalizes phone numbers and matches active accounts. Contact names and unmatched phone numbers are returned to the caller only and are not stored. Device contact permission must be requested by the mobile application. Rate limited to 10 requests per user per minute.","security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatContactSyncRequest"},"example":{"contacts":[{"name":"Alice","phoneNumber":"+250788123456"}]}}}},"responses":{"200":{"description":"Matched and unmatched contacts","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatContactSyncResponse"}}}},"401":{"description":"Missing, invalid, or expired bearer access token.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"UNAUTHENTICATED","message":"Authentication required","requestId":"req_01J9EVENT02"}}}},"422":{"description":"Validation failed: invalid phone, body, or required fields","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"VALIDATION_FAILED","message":"Some fields need attention","requestId":"req_01J9EXAMPLE","fields":{"phone":["Enter a valid Rwanda phone number"]}}}}},"429":{"description":"Too many OTP attempts or sends for this phone/device","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"RATE_LIMITED","message":"Too many attempts. Try again shortly.","requestId":"req_01J9EXAMPLE","retryAfterSeconds":60}}}}}}},
   "/api/v1/chat/conversations": {"get":{"tags":["Chat"],"summary":"List my conversations","description":"Returns a paginated page of conversations visible to the authenticated user, with unread counts.","security":[{"bearerAuth":[]}],"parameters":[{"name":"page","in":"query","schema":{"type":"integer","minimum":1,"default":1}},{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"archived","in":"query","schema":{"type":"boolean","default":false}}],"responses":{"200":{"description":"Conversation page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatConversationPage"}}}},"401":{"description":"Missing, invalid, or expired bearer access token.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"UNAUTHENTICATED","message":"Authentication required","requestId":"req_01J9EVENT02"}}}},"422":{"description":"Validation failed: invalid phone, body, or required fields","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"VALIDATION_FAILED","message":"Some fields need attention","requestId":"req_01J9EXAMPLE","fields":{"phone":["Enter a valid Rwanda phone number"]}}}}}}},"post":{"tags":["Chat"],"summary":"Create or find a conversation","description":"Creates a direct conversation or group. Direct pairs are unique and repeated requests return the existing conversation. The authenticated user is added automatically. To create a self-conversation, send the authenticated user's ID as the only userIds entry with type DIRECT. Self-conversations contain one participant; including yourself in a group or alongside another user is not allowed.","security":[{"bearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatCreateConversationRequest"},"example":{"userIds":["550e8400-e29b-41d4-a716-446655440001"],"type":"DIRECT"}}}},"responses":{"201":{"description":"Conversation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatConversation"}}}},"401":{"description":"Missing, invalid, or expired bearer access token.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"UNAUTHENTICATED","message":"Authentication required","requestId":"req_01J9EVENT02"}}}},"422":{"description":"Validation failed: invalid phone, body, or required fields","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"VALIDATION_FAILED","message":"Some fields need attention","requestId":"req_01J9EXAMPLE","fields":{"phone":["Enter a valid Rwanda phone number"]}}}}}}}},
   "/api/v1/chat/conversations/{id}": {"get":{"tags":["Chat"],"summary":"Get conversation details","security":[{"bearerAuth":[]}],"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"Conversation","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatConversation"}}}},"401":{"description":"Missing, invalid, or expired bearer access token.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"},"example":{"code":"UNAUTHENTICATED","message":"Authentication required","requestId":"req_01J9EVENT02"}}}},"403":{"description":"Not a conversation participant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}},"404":{"description":"Conversation not found","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiError"}}}}}}},
@@ -132,7 +151,7 @@ const localSchemas = {
   ApiError: { type: "object", required: ["code", "message", "requestId"], properties: { code: { type: "string", example: "VALIDATION_FAILED" }, message: { type: "string", example: "Some fields need attention" }, requestId: { type: "string", example: "req_01J9EXAMPLE", description: "Use this value to find the matching server log entry." }, fields: { type: "object", description: "Field names map to one or more specific validation messages.", additionalProperties: { type: "array", items: { type: "string" } } }, retryAfterSeconds: { type: "integer" } } },
   OtpRequest: { type: "object", required: ["phone", "deviceId"], properties: { phone: { type: "string", pattern: "^\\+[1-9]\\d{7,14}$", example: "+250788123456" }, deviceId: { type: "string", minLength: 8, maxLength: 128, example: "install-12345678" } } },
   OtpRequestResponse: { type: "object", properties: { retryAfterSeconds: { type: "integer" }, expiresAt: { type: "string", format: "date-time" } } },
-  SignupRequest: { type: "object", required: ["phone", "pin"], anyOf: [{ required: ["username"] }, { required: ["firstName"] }], properties: { phone: { type: "string", pattern: "^\\+[1-9]\\d{7,14}$", example: "+250788123456" }, username: { type: "string", minLength: 2, maxLength: 100, example: "Aline" }, firstName: { type: "string", minLength: 2, maxLength: 100 }, accountType: { type: "string", enum: ["POSTER", "CUSTOMER"], default: "CUSTOMER" }, pin: { type: "string", pattern: "^\\d{5}$", example: "12345" } } },
+  SignupRequest: { type: "object", required: ["phone", "pin"], anyOf: [{ required: ["username"] }, { required: ["firstName"] }], properties: { phone: { type: "string", pattern: "^\\+[1-9]\\d{7,14}$", example: "+250788123456" }, username: { type: "string", minLength: 2, maxLength: 100, example: "Aline" }, firstName: { type: "string", minLength: 2, maxLength: 100 }, accountType: { type: "string", enum: ["CUSTOMER"], default: "CUSTOMER", description: "Organiser access requires an approved application." }, pin: { type: "string", pattern: "^\\d{5}$", example: "12345" } } },
   SignupOtpVerifyRequest: { type: "object", required: ["phone", "code", "pin"], properties: { phone: { type: "string", example: "+250788123456" }, code: { type: "string", pattern: "^\\d{6}$", example: "123456" }, deviceId: { type: "string", minLength: 8, maxLength: 128 }, displayName: { type: "string", minLength: 2, maxLength: 60 }, pin: { type: "string", pattern: "^\\d{5}$", example: "12345" } } },
   OtpVerifyRequest: { type: "object", required: ["phone", "code", "deviceId"], properties: { phone: { type: "string", example: "+250788123456" }, code: { type: "string", pattern: "^\\d{6}$", example: "123456" }, deviceId: { type: "string", minLength: 8, maxLength: 128 }, displayName: { type: "string", minLength: 2, maxLength: 60 } } },
   LoginRequest: { type: "object", required: ["phone", "pin"], properties: { phone: { type: "string", pattern: "^\\+[1-9]\\d{7,14}$", example: "+250788123456" }, pin: { type: "string", pattern: "^\\d{5}$", example: "12345" } } },
@@ -248,14 +267,19 @@ const additionalRouteDefinitions = [
   { path: "/api/v1/admin/manual-payments", method: "get", tag: "ManualPayments", summary: "Admin: list/filter manual payment submissions", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/admin/manual-payments/{id}", method: "get", tag: "ManualPayments", summary: "Admin: get a manual payment submission, including the submitter's contact details", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/admin/manual-payments/{id}/review", method: "patch", tag: "ManualPayments", summary: "Admin: mark a pending submission as under review", authenticated: true, optionalAuth: false, hasBody: false },
-  { path: "/api/v1/admin/manual-payments/{id}/approve", method: "post", tag: "ManualPayments", summary: "Admin: approve a submission (activates the FindLove or organiser subscription and emails the user)", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/admin/manual-payments/{id}/approve", method: "post", tag: "ManualPayments", summary: "Admin: verify payment; organiser payments require a verified_transaction_id and new applications enter review", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/admin/manual-payments/{id}/reject", method: "post", tag: "ManualPayments", summary: "Admin: reject a submission with a reason (emails the user)", authenticated: true, optionalAuth: false, hasBody: true },
+  { path: "/api/v1/me/organiser-application", method: "get", tag: "Organisations", summary: "Get the latest organiser application", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/organiser-applications", method: "post", tag: "Organisations", summary: "Create an organiser application before payment", authenticated: true, optionalAuth: false, hasBody: true },
+  { path: "/api/v1/admin/organiser-applications", method: "get", tag: "Organisations", summary: "List organiser applications and payment verification", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/admin/organiser-applications/{id}/review", method: "post", tag: "Organisations", summary: "Approve or reject an application in review", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/admin/manual-payment-methods", method: "get", tag: "ManualPayments", summary: "Admin: list all payment methods, including inactive ones (?platform=findlove|organiser)", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/admin/manual-payment-methods", method: "post", tag: "ManualPayments", summary: "Admin: create a payment method (MTN MoMo / Airtel Money number) for a platform", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/admin/manual-payment-methods/{id}", method: "patch", tag: "ManualPayments", summary: "Admin: update a payment method", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/admin/manual-payment-methods/{id}/status", method: "patch", tag: "ManualPayments", summary: "Admin: activate or deactivate a payment method", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/admin/manual-payment-methods/{id}", method: "delete", tag: "ManualPayments", summary: "Admin: delete a payment method (refused with 409 if any submission already references it; deactivate instead)", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/chat/contacts/aliases", method: "get", tag: "Chat", summary: "List Contact Aliases", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/chat/users/search", method: "get", tag: "Chat", summary: "Search public Eventis users by username", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/chat/contacts/aliases", method: "patch", tag: "Chat", summary: "Update Contact Alias", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/chat/messages/{id}/forward", method: "post", tag: "Chat", summary: "Forward Message", authenticated: true, optionalAuth: false, hasBody: true },
   { path: "/api/v1/chat/conversations/{id}", method: "delete", tag: "Chat", summary: "Clear Conversation", authenticated: true, optionalAuth: false, hasBody: false },
@@ -309,6 +333,14 @@ const additionalRouteDefinitions = [
   { path: "/api/v1/admin/event-installments/audit-logs", method: "get", tag: "Payments", summary: "Audit Logs", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/events/{id}/analytics", method: "post", tag: "Analytics", summary: "Record", authenticated: false, optionalAuth: true, hasBody: true },
   { path: "/api/v1/me/analytics/overview", method: "get", tag: "Analytics", summary: "Overview", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/events/{id}/interactions", method: "get", tag: "Events", summary: "Get Event Interactions", authenticated: false, optionalAuth: true, hasBody: false },
+  { path: "/api/v1/events/{id}/like", method: "post", tag: "Events", summary: "Like Event", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/events/{id}/like", method: "delete", tag: "Events", summary: "Unlike Event", authenticated: true, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/events/{id}/likes", method: "get", tag: "Events", summary: "List Event Likes", authenticated: false, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/events/{id}/comments", method: "get", tag: "Events", summary: "List Event Comments", authenticated: false, optionalAuth: false, hasBody: false },
+  { path: "/api/v1/events/{id}/comments", method: "post", tag: "Events", summary: "Create Event Comment", authenticated: true, optionalAuth: false, hasBody: true },
+  { path: "/api/v1/comments/{id}", method: "patch", tag: "Events", summary: "Edit Event Comment", authenticated: true, optionalAuth: false, hasBody: true },
+  { path: "/api/v1/comments/{id}", method: "delete", tag: "Events", summary: "Delete Event Comment", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/events/{id}/save", method: "post", tag: "Events", summary: "Save Event", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/events/{id}/save", method: "delete", tag: "Events", summary: "Unsave Event", authenticated: true, optionalAuth: false, hasBody: false },
   { path: "/api/v1/me/saved-events", method: "get", tag: "Events", summary: "List Saved Events", authenticated: true, optionalAuth: false, hasBody: false },
@@ -383,6 +415,8 @@ for (const route of additionalRouteDefinitions) {
     schema: { type: "string" },
   }));
   const needsUploadBody = route.path === "/api/v1/uploads";
+  const isCommentBody = (route.path === "/api/v1/events/{id}/comments" && route.method === "post")
+    || (route.path === "/api/v1/comments/{id}" && route.method === "patch");
   const operation: Record<string, unknown> = {
     tags: [route.tag],
     operationId: route.method + "_" + route.path.replace(/[^a-zA-Z0-9]+(.)/g, (_match, letter: string) => letter.toUpperCase()),
@@ -391,10 +425,12 @@ for (const route of additionalRouteDefinitions) {
     ...(pathParameters.length ? { parameters: pathParameters } : {}),
     ...(route.hasBody || needsUploadBody ? {
       requestBody: {
-        required: false,
+        required: isCommentBody,
         content: {
           [needsUploadBody ? "multipart/form-data" : "application/json"]: {
-            schema: { type: "object", additionalProperties: true },
+            schema: isCommentBody
+              ? { type: "object", required: ["body"], properties: { body: { type: "string", minLength: 1, maxLength: 2000 } } }
+              : { type: "object", additionalProperties: true },
           },
         },
       },

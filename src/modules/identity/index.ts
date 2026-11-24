@@ -7,6 +7,7 @@ export { GetMeService } from "./application/get-me.service.js";
 export { AccountTypeService } from "./application/account-type.service.js";
 export { LookupUsersService } from "./application/lookup-users.service.js";
 export type { PublicUserProfile } from "./application/lookup-users.service.js";
+export type { DiscoverableUserProfile } from "./application/lookup-users.service.js";
 export { VerifyAccessTokenService } from "./application/verify-access-token.service.js";
 export { JwtAuthGuard, CurrentUserId } from "./api/jwt-auth.guard.js";
 export { TokenService } from "./infrastructure/token.service.js";

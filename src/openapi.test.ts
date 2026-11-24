@@ -82,6 +82,13 @@ describe("openapi contract", () => {
     expect(paths["/api/v1/events/{id}/share"]?.get).toBeDefined();
   });
 
+  it("documents authenticated comment editing", () => {
+    expect(paths["/api/v1/comments/{id}"]?.patch?.security).toEqual([{ bearerAuth: [] }]);
+    expect(paths["/api/v1/comments/{id}"]?.patch?.requestBody?.content?.["application/json"]).toEqual({
+      schema: { type: "object", required: ["body"], properties: { body: { type: "string", minLength: 1, maxLength: 2000 } } },
+    });
+  });
+
   it("documents status viewer tracking for owners", () => {
     expect(paths["/api/v1/statuses/{id}/views"]?.get).toBeDefined();
     expect(paths["/api/v1/statuses/{id}/views"]?.get?.security).toEqual([
@@ -170,6 +177,7 @@ describe("openapi contract", () => {
 
   it("documents every chat REST route with bearer authentication", () => {
     const routes: Array<[string, keyof Operation]> = [
+      ["/api/v1/chat/users/search", "get"],
       ["/api/v1/chat/contacts/sync", "post"],
       ["/api/v1/chat/conversations", "get"],
       ["/api/v1/chat/conversations", "post"],

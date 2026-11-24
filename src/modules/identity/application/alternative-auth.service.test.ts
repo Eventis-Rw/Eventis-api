@@ -327,6 +327,22 @@ describe("Brevo email OTP delivery", () => {
     }
   });
 
+  it("explains Brevo 403 responses instead of returning a generic send failure", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('{"code":"forbidden"}', { status: 403 }),
+    );
+    try {
+      const f = fixture();
+      await assert.rejects(
+        f.service.sendEmailCode({ email: "aline@example.com", purpose: "register", username: "Aline" }),
+        /Brevo API key’s transactional email permission/,
+      );
+      expect(f.challenge.consumedAt).toEqual(now);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("fails before sending when the Brevo API key or sender is missing or invalid", async () => {
     const fetchSpy = spyOn(globalThis, "fetch");
     try {
@@ -347,6 +363,19 @@ describe("Brevo email OTP delivery", () => {
         /not configured correctly/,
       );
       expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("uses the shared Brevo sender when AUTH_EMAIL_FROM is not set", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 201 }));
+    try {
+      const f = fixture({}, { AUTH_EMAIL_FROM: undefined, BREVO_SENDER_EMAIL: "verified@example.com" });
+      await f.service.sendEmailCode({ email: "aline@example.com", purpose: "register", username: "Aline" });
+      const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+      const payload = JSON.parse(String(init.body)) as { sender: { email: string } };
+      expect(payload.sender.email).toBe("verified@example.com");
     } finally {
       fetchSpy.mockRestore();
     }

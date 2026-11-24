@@ -147,6 +147,36 @@ export class UserRepository {
     return rows.map(toUserDomain);
   }
 
+  async searchDiscoverableByUsername(input: {
+    query: string;
+    viewerId: string;
+    skip: number;
+    take: number;
+  }) {
+    return this.prisma.user.findMany({
+      where: {
+        id: { not: input.viewerId },
+        status: "ACTIVE",
+        deletedAt: null,
+        profileVisibility: "PUBLIC",
+        ...(input.query ? { username: { contains: input.query, mode: "insensitive" as const } } : {}),
+        blocksCreated: { none: { blockedId: input.viewerId } },
+        blocksReceived: { none: { blockerId: input.viewerId } },
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+      },
+      orderBy: { username: "asc" },
+      skip: input.skip,
+      take: input.take,
+    });
+  }
+
   async setPinHash(userId: string, pinHash: string): Promise<User> {
     const row = await this.prisma.user.update({
       where: { id: userId },
@@ -276,7 +306,7 @@ export class UserRepository {
               ? {
                   firstName: otp.firstName,
                   displayName: otp.firstName,
-                  accountType: otp.accountType ?? "CUSTOMER",
+                  accountType: "CUSTOMER",
                 }
               : {}),
             ...(otp.purpose !== "SIGN_UP" && input.displayName

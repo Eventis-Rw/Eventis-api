@@ -50,6 +50,11 @@ const pageSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
+const userSearchSchema = z.object({
+  query: z.string().trim().max(33).optional().default(""),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
 const contactSchema = z.object({
   contacts: z
     .array(
@@ -151,6 +156,14 @@ export class ChatController {
     @Body(zodPipe(contactSchema)) body: z.infer<typeof contactSchema>,
   ) {
     return this.chat.syncContacts(userId, body.contacts);
+  }
+
+  @Get("users/search")
+  searchUsers(
+    @CurrentUserId() userId: string,
+    @Query(zodPipe(userSearchSchema)) query: z.infer<typeof userSearchSchema>,
+  ) {
+    return this.chat.searchUsers(userId, query);
   }
 
   @Post("conversations")

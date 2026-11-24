@@ -55,6 +55,11 @@ function serviceFor(latestOtp: OtpRecord | null) {
 }
 
 describe("RequestOtpService signup identity", () => {
+  it("does not grant organiser role through registration", async () => {
+    const { service, created } = serviceFor(null);
+    await expect(service.execute({ phone, firstName: "flaman", accountType: "POSTER", pin: "12345" })).rejects.toMatchObject({ status: 422 });
+    expect(created()).toBeUndefined();
+  });
   it("does not compare a prior sign-in OTP with new signup details", async () => {
     const { service, created } = serviceFor(otp("SIGN_IN"));
 

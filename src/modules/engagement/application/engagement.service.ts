@@ -24,6 +24,55 @@ export class EngagementService {
     private readonly clock: Clock,
   ) {}
 
+  async eventInteractionSummary(eventId: string, userId?: string) {
+    if (!(await this.repository.eventExists(eventId))) throw AppError.notFound("That event");
+    return this.repository.eventInteractionSummary(eventId, userId);
+  }
+
+  async toggleEventLike(eventId: string, userId: string) {
+    const result = await this.repository.likeEvent(eventId, userId);
+    if (!result) throw AppError.notFound("That event");
+    return { eventId, ...result };
+  }
+
+  async unlikeEvent(eventId: string, userId: string) {
+    const result = await this.repository.unlikeEvent(eventId, userId);
+    if (!result) throw AppError.notFound("That event");
+    return { eventId, ...result };
+  }
+
+  async listEventLikes(eventId: string, input: PageInput) {
+    if (!(await this.repository.eventExists(eventId))) throw AppError.notFound("That event");
+    const { items, total } = await this.repository.listEventLikes(eventId, (input.page - 1) * input.limit, input.limit);
+    return { items: items.map((item) => ({ id: item.id, userId: item.userId, username: item.user.username, displayName: item.user.displayName, avatarUrl: item.user.avatarUrl, createdAt: item.createdAt.toISOString() })), page: input.page, limit: input.limit, total };
+  }
+
+  async createEventComment(eventId: string, userId: string, body: string) {
+    const comment = await this.repository.createEventComment(eventId, userId, body.trim());
+    if (!comment) throw AppError.notFound("That event");
+    return mapEventComment(comment);
+  }
+
+  async listEventComments(eventId: string, input: PageInput) {
+    if (!(await this.repository.eventExists(eventId))) throw AppError.notFound("That event");
+    const { items, total } = await this.repository.listEventComments(eventId, (input.page - 1) * input.limit, input.limit);
+    return { items: items.map(mapEventComment), page: input.page, limit: input.limit, total };
+  }
+
+  async updateEventComment(id: string, userId: string, body: string) {
+    const result = await this.repository.updateEventComment(id, userId, body.trim());
+    if (result === "missing") throw AppError.notFound("That comment");
+    if (result === "forbidden") throw AppError.forbidden("You can only edit your own comment");
+    return mapEventComment(result);
+  }
+
+  async deleteEventComment(id: string, userId: string) {
+    const result = await this.repository.deleteEventComment(id, userId);
+    if (result === "missing") throw AppError.notFound("That comment");
+    if (result === "forbidden") throw AppError.forbidden("You can only delete your own comment or moderate comments on your post");
+    return { id, deleted: true };
+  }
+
   async createUpcomingEventReminders(now = this.clock.now()): Promise<number> {
     const targetDate = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     return this.repository.createSavedEventReminders(targetDate);
@@ -208,6 +257,13 @@ export class EngagementService {
     if (!row) throw AppError.notFound("That report");
     return toEventReportResponse(row);
   }
+}
+
+function mapEventComment(comment: {
+  id: string; eventId: string; userId: string; body: string; createdAt: Date;
+  user: { id: string; username: string | null; displayName: string | null; avatarUrl: string | null };
+}) {
+  return { id: comment.id, eventId: comment.eventId, userId: comment.userId, body: comment.body, createdAt: comment.createdAt.toISOString(), user: comment.user };
 }
 
 function assertRating(rating: number): void {

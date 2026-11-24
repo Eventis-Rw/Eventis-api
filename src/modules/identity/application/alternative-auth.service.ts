@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { ERROR_CODES } from "@eventis/contracts";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { HttpException, Inject, Injectable } from "@nestjs/common";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
@@ -38,6 +40,7 @@ const appleKeys = createRemoteJWKSet(
 
 @Injectable()
 export class AlternativeAuthService {
+  private readonly logger = new Logger(AlternativeAuthService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly users: UserRepository,
@@ -51,13 +54,14 @@ export class AlternativeAuthService {
     purpose: "login" | "register";
     username?: string | undefined;
   }) {
-    if (!this.env.BREVO_API_KEY || !this.env.AUTH_EMAIL_FROM) {
+    const configuredSender = this.env.AUTH_EMAIL_FROM ?? this.env.BREVO_SENDER_EMAIL;
+    if (!this.env.BREVO_API_KEY || !configuredSender) {
       throw AppError.forbidden("Email sign-in is not configured yet.");
     }
-    const senderMatch = this.env.AUTH_EMAIL_FROM.match(
+    const senderMatch = configuredSender.match(
       /^\s*([^<>]*)<([^<>]+)>\s*$/,
     );
-    const senderEmail = (senderMatch?.[2] ?? this.env.AUTH_EMAIL_FROM).trim();
+    const senderEmail = (senderMatch?.[2] ?? configuredSender).trim();
     const senderName = senderMatch?.[1]?.trim() || "Eventis";
     if (!z.email().safeParse(senderEmail).success) {
       throw AppError.forbidden(
@@ -79,7 +83,8 @@ export class AlternativeAuthService {
       });
       if (input.purpose === "register" && user) throw emailAlreadyExists();
       const recent = await tx.emailSignInCode.findFirst({
-        where: { email },
+        // Failed sends are consumed below and should be retryable immediately.
+        where: { email, consumedAt: null },
         orderBy: { createdAt: "desc" },
       });
       if (recent && now.getTime() - recent.createdAt.getTime() < 60_000)
@@ -116,6 +121,7 @@ export class AlternativeAuthService {
     });
     // Login keeps the same response for existing and unknown accounts.
     if (challenge.purpose !== "unavailable") {
+      let providerStatus: number | undefined;
       try {
         const response = await fetch("https://api.brevo.com/v3/smtp/email", {
           method: "POST",
@@ -130,14 +136,29 @@ export class AlternativeAuthService {
           }),
           signal: AbortSignal.timeout(10_000),
         });
-        if (!response.ok) throw new Error("Email delivery failed");
-      } catch {
+        if (!response.ok) {
+          providerStatus = response.status;
+          const providerResponse = await response.text().catch(() => "");
+          this.logger.error({ status: response.status, providerResponse }, "Brevo rejected email sign-in code");
+          throw new Error(`Brevo rejected email (${response.status})`);
+        }
+      } catch (error) {
+        this.logger.error({ err: error }, "Email sign-in code delivery failed");
         await this.prisma.emailSignInCode.update({
           where: { id: challenge.id },
           data: { consumedAt: now },
         });
-        throw AppError.forbidden(
+        if (providerStatus === 403) {
+          throw new AppError(
+            ERROR_CODES.INTERNAL_ERROR,
+            "Email delivery was denied by the provider. Check the Brevo API key’s transactional email permission and the verified sender configuration.",
+            502,
+          );
+        }
+        throw new AppError(
+          ERROR_CODES.INTERNAL_ERROR,
           "Unable to send your email code. Please try again later.",
+          502,
         );
       }
     }
