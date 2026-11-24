@@ -115,6 +115,6 @@ jobs:
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/eventis-deploy
           chmod 600 ~/.ssh/eventis-deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/eventis-deploy -p 24596 ubuntu@38.58.176.137 "deploy $RELEASE_SHA" < release/app.tar.gz
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/eventis-deploy -p 24596 ubuntu@38.58.176.137 "deploy $RELEASE_SHA" < release/app.tar.gz
       - name: Verify public gateway
         run: curl --fail --retry 8 --retry-delay 5 --retry-all-errors https://eventis-api.brother-1.hubfly.app/readyz
