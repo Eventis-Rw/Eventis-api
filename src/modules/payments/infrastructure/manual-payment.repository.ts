@@ -1,4 +1,6 @@
 import { Injectable } from "@nestjs/common";
+import { ERROR_CODES } from "@eventis/contracts";
+import { AppError } from "../../../common/errors/app-error.js";
 import type {
   ManualPaymentMethod as PrismaManualPaymentMethod,
   ManualPaymentSubmission as PrismaManualPaymentSubmission,
@@ -205,7 +207,20 @@ export class ManualPaymentRepository {
     paymentMethodSnapshot: ManualPaymentMethodSnapshot;
     receiptUploadId: string;
   }): Promise<ManualPaymentSubmission> {
-    const row = await this.prisma.manualPaymentSubmission.create({
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${input.userId}::uuid FOR UPDATE`;
+      const open = await tx.manualPaymentSubmission.findFirst({
+        where: { userId: input.userId, platform: input.platform, status: { in: [...OPEN_MANUAL_PAYMENT_STATUSES] } },
+      });
+      if (open) throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "You already have a payment awaiting review.");
+      const user = await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { accountType: true } });
+      const application = input.platform === "ORGANISER" && user.accountType !== "POSTER"
+        ? await tx.organiserApplication.findFirst({ where: { userId: input.userId, status: "PENDING_PAYMENT" } })
+        : null;
+      if (input.platform === "ORGANISER" && user.accountType !== "POSTER" && (!application || application.manualPaymentId)) {
+        throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "Complete your organiser application before submitting payment.");
+      }
+      const created = await tx.manualPaymentSubmission.create({
       data: {
         reference: input.reference,
         userId: input.userId,
@@ -220,6 +235,9 @@ export class ManualPaymentRepository {
           input.paymentMethodSnapshot as unknown as Prisma.InputJsonValue,
         receiptUploadId: input.receiptUploadId,
       },
+      });
+      if (application) await tx.organiserApplication.update({ where: { id: application.id }, data: { manualPaymentId: created.id } });
+      return created;
     });
     return toSubmissionDomain(row);
   }

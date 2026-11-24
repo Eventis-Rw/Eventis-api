@@ -172,6 +172,8 @@ model User {
   externalIdentities   ExternalIdentity[]
   refreshSessions      RefreshSession[]
   events               Event[]
+  eventLikes           EventLike[]
+  eventComments        EventComment[]
   statuses             Status[]
   statusViews          StatusView[]
   eventRegistrations   EventRegistration[]
@@ -209,6 +211,7 @@ model User {
   supportReports                   SupportReport[]
   accountDeletionChallenges        AccountDeletionChallenge[]
   organiserSubscriptions           OrganiserSubscription[]
+  organiserApplications            OrganiserApplication[]
   businessVerificationsReviewed    BusinessVerification[]         @relation("BusinessVerificationReviewer")
   promotions                       Promotion[]                    @relation("PromotionOwner")
   promotionsReviewed               Promotion[]                    @relation("PromotionReviewer")
@@ -326,6 +329,8 @@ model Event {
   analyticsEvents       AnalyticsEvent[]
   dailyStats            EventStatDaily[]
   installmentAgreements EventInstallmentAgreement[] @relation("EventInstallmentAgreements")
+  likes                 EventLike[]
+  comments              EventComment[]
 
   @@index([status, startDate], map: "events_status_start_idx")
   @@index([posterId], map: "events_poster_idx")
@@ -335,6 +340,36 @@ model Event {
   @@index([city], map: "events_city_idx")
   @@index([latitude, longitude], map: "events_location_idx")
   @@map("events")
+}
+
+model EventLike {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event Event @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId], map: "event_likes_event_user_key")
+  @@index([eventId, createdAt], map: "event_likes_event_created_idx")
+  @@map("event_likes")
+}
+
+model EventComment {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String    @map("event_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  body      String    @db.VarChar(2000)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  event Event @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, deletedAt, createdAt], map: "event_comments_event_created_idx")
+  @@index([userId, createdAt], map: "event_comments_user_created_idx")
+  @@map("event_comments")
 }
 
 model EventRegistration {
@@ -783,6 +818,40 @@ enum ManualPaymentStatus {
   @@map("manual_payment_status")
 }
 
+enum OrganiserApplicationStatus {
+  PENDING_PAYMENT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+
+  @@map("organiser_application_status")
+}
+
+model OrganiserApplication {
+  id              String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String                     @map("user_id") @db.Uuid
+  status          OrganiserApplicationStatus @default(PENDING_PAYMENT)
+  name            String                     @db.VarChar(80)
+  description     String                     @db.Text
+  activities      String                     @db.VarChar(300)
+  location        String                     @db.VarChar(120)
+  website         String?                    @db.VarChar(500)
+  manualPaymentId String?                    @unique @map("manual_payment_id") @db.Uuid
+  submittedAt     DateTime?                  @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt      DateTime?                  @map("reviewed_at") @db.Timestamptz(6)
+  reviewedBy      String?                    @map("reviewed_by") @db.Uuid
+  rejectionReason String?                    @map("rejection_reason") @db.VarChar(1000)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "organiser_applications_user_fk")
+  manualPayment ManualPaymentSubmission? @relation(fields: [manualPaymentId], references: [id], onDelete: Restrict, map: "organiser_applications_payment_fk")
+
+  @@index([userId, createdAt], map: "organiser_applications_user_idx")
+  @@index([status, createdAt], map: "organiser_applications_status_idx")
+  @@map("organiser_applications")
+}
+
 model ManualPaymentMethod {
   id           String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   provider     PaymentMethod
@@ -820,10 +889,14 @@ model ManualPaymentSubmission {
   reviewedBy            String?               @map("reviewed_by") @db.Uuid
   reviewedAt            DateTime?             @map("reviewed_at") @db.Timestamptz(6)
   rejectionReason       String?               @map("rejection_reason") @db.VarChar(1000)
+  verifiedProvider      PaymentMethod?        @map("verified_provider")
+  verifiedTransactionId String?               @map("verified_transaction_id") @db.VarChar(160)
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organiserApplication  OrganiserApplication?
 
   @@index([userId, createdAt], map: "manual_payment_submissions_user_idx")
+  @@unique([verifiedProvider, verifiedTransactionId], map: "manual_payment_verified_transaction_unique")
   @@index([status, platform, createdAt], map: "manual_payment_submissions_status_idx")
   @@map("manual_payment_submissions")
 }

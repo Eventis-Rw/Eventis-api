@@ -53,6 +53,7 @@ import {
 } from "../mappers/chat.mapper.js";
 
 const CALL_RING_TIMEOUT_MS = 45_000;
+const USER_SEARCH_MAX_PER_MINUTE = 30;
 
 export interface ContactInput {
   name?: string | undefined;
@@ -151,6 +152,20 @@ export class ChatService {
         };
       }),
     };
+  }
+
+  async searchUsers(userId: string, input: { query: string; page: number; limit: number }) {
+    this.rateLimiter.consume(
+      `user-search:${userId}`,
+      this.clock.now(),
+      USER_SEARCH_MAX_PER_MINUTE,
+      60_000,
+    );
+    const query = input.query.trim().replace(/^@+/, "");
+    if (query.length === 1) {
+      throw AppError.validation({ query: ["Search with at least 2 username characters"] });
+    }
+    return this.users.searchByUsername({ ...input, query, viewerId: userId });
   }
 
   async createConversation(

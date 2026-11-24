@@ -43,6 +43,9 @@ export class RequestOtpService {
     accountType?: "POSTER" | "CUSTOMER";
     pin?: string;
   }): Promise<OtpRequestResponse> {
+    if (input.accountType === "POSTER") {
+      throw AppError.validation({ accountType: ["Register as a customer and apply for organiser access."] });
+    }
     let phone: string;
     try {
       phone = normalizeRwandaPhone(input.phone);

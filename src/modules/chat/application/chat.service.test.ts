@@ -20,3 +20,20 @@ test("call ICE settings issue user-bound, one-hour coturn credentials", () => {
   ]);
   expect(result.expiresAt).toBe(Math.floor(now.getTime() / 1000) + 3600);
 });
+
+test("username directory search strips @, paginates, and scopes requests to the viewer", async () => {
+  let searchInput: unknown;
+  let rateLimitKey = "";
+  const users = {
+    searchByUsername: (input: unknown) => {
+      searchInput = input;
+      return Promise.resolve({ items: [], page: 2, limit: 10, hasMore: true });
+    },
+  };
+  const limiter = { consume: (key: string) => { rateLimitKey = key; } };
+  const clock = { now: () => new Date("2026-11-24T10:00:00Z") };
+  const service = new ChatService({} as never, users as never, {} as never, clock as never, limiter as never, {} as never, {} as never);
+  await expect(service.searchUsers("viewer-id", { query: " @aline ", page: 2, limit: 10 })).resolves.toEqual({ items: [], page: 2, limit: 10, hasMore: true });
+  expect(rateLimitKey).toBe("user-search:viewer-id");
+  expect(searchInput).toEqual({ query: "aline", viewerId: "viewer-id", page: 2, limit: 10 });
+});

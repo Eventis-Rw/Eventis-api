@@ -20,6 +20,7 @@ import { Roles } from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
+  OptionalAuth,
   Public,
   type AuthenticatedUser,
 } from "../../../common/guards/auth.guard.js";
@@ -52,11 +53,56 @@ const reportListSchema = pageSchema.extend({
 const reportStatusSchema = z.object({
   status: z.enum(["OPEN", "REVIEWED", "DISMISSED"]),
 });
+const commentSchema = z.object({ body: z.string().trim().min(1).max(2000) });
 
 @Controller({ version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
 export class EngagementController {
   constructor(private readonly engagement: EngagementService) {}
+
+  @OptionalAuth()
+  @Get("events/:id/interactions")
+  interactionSummary(@CurrentUser() user: AuthenticatedUser | undefined, @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>) {
+    return this.engagement.eventInteractionSummary(params.id, user?.userId);
+  }
+
+  @Post("events/:id/like")
+  @HttpCode(200)
+  likeEvent(@CurrentUser() user: AuthenticatedUser | undefined, @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>) {
+    return this.engagement.toggleEventLike(params.id, requireUser(user).userId);
+  }
+
+  @Delete("events/:id/like")
+  unlikeEvent(@CurrentUser() user: AuthenticatedUser | undefined, @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>) {
+    return this.engagement.unlikeEvent(params.id, requireUser(user).userId);
+  }
+
+  @Public()
+  @Get("events/:id/likes")
+  listEventLikes(@Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>, @Query(zodPipe(pageSchema)) query: z.infer<typeof pageSchema>) {
+    return this.engagement.listEventLikes(params.id, query);
+  }
+
+  @Public()
+  @Get("events/:id/comments")
+  listEventComments(@Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>, @Query(zodPipe(pageSchema)) query: z.infer<typeof pageSchema>) {
+    return this.engagement.listEventComments(params.id, query);
+  }
+
+  @Post("events/:id/comments")
+  createEventComment(@CurrentUser() user: AuthenticatedUser | undefined, @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>, @Body(zodPipe(commentSchema)) body: z.infer<typeof commentSchema>) {
+    return this.engagement.createEventComment(params.id, requireUser(user).userId, body.body);
+  }
+
+  @Patch("comments/:id")
+  updateEventComment(@CurrentUser() user: AuthenticatedUser | undefined, @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>, @Body(zodPipe(commentSchema)) body: z.infer<typeof commentSchema>) {
+    return this.engagement.updateEventComment(params.id, requireUser(user).userId, body.body);
+  }
+
+  @Delete("comments/:id")
+  deleteEventComment(@CurrentUser() user: AuthenticatedUser | undefined, @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>) {
+    return this.engagement.deleteEventComment(params.id, requireUser(user).userId);
+  }
 
   @Post("events/:id/save")
   @HttpCode(200)

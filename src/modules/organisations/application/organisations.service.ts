@@ -530,7 +530,7 @@ export class OrganisationsService {
     },
   ) {
     const plan = await this.organisations.findPlan(planId, transaction);
-    if (!plan || !plan.active) {
+    if (!plan || (!plan.active && !terms)) {
       throw AppError.validation({
         organiserPlanId: ["That organiser plan is no longer available."],
       });

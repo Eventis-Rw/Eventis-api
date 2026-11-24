@@ -1,5 +1,6 @@
 import { ERROR_CODES } from "@eventis/contracts";
 import { Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
@@ -13,6 +14,7 @@ import {
 } from "../domain/manual-payment.js";
 import { ManualPaymentRepository } from "../infrastructure/manual-payment.repository.js";
 import { PaymentRepository } from "../infrastructure/payment.repository.js";
+import { OrganiserApplicationsService } from "./organiser-applications.service.js";
 
 /**
  * For email copy. Despite the field's name, priceMinor on an InstallmentPlan
@@ -34,6 +36,7 @@ export class ManualPaymentsService {
     private readonly organisations: OrganisationsService,
     private readonly emails: EmailService,
     private readonly clock: Clock,
+    private readonly applications: OrganiserApplicationsService,
   ) {}
 
   // ---- User: submit & track ------------------------------------------------
@@ -213,6 +216,7 @@ export class ManualPaymentsService {
   async approve(
     adminUserId: string,
     id: string,
+    verifiedTransactionId?: string,
   ): Promise<ManualPaymentSubmission> {
     const now = this.clock.now();
     const { submission, resolved, changed } = await this.repo.transaction(
@@ -257,11 +261,26 @@ export class ManualPaymentsService {
             tx,
           );
         } else {
+          if (typeof verifiedTransactionId !== "string" || !/^[A-Za-z0-9-]{4,160}$/.test(verifiedTransactionId.trim())) {
+            throw AppError.validation({ verified_transaction_id: ["Enter the provider transaction ID you verified."] });
+          }
+          const transactionId = verifiedTransactionId.trim().toUpperCase();
+          const duplicate = await tx.manualPaymentSubmission.findFirst({
+            where: { verifiedProvider: submission.paymentMethodSnapshot.provider, verifiedTransactionId: transactionId },
+          });
+          if (duplicate) throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "This provider transaction has already been used.");
+          await tx.manualPaymentSubmission.update({
+            where: { id: submission.id },
+            data: { verifiedProvider: submission.paymentMethodSnapshot.provider, verifiedTransactionId: transactionId },
+          });
           if (!submission.organiserPlanId)
             throw AppError.validation({
               organiserPlanId: ["That organiser plan is unavailable."],
             });
-          await this.organisations.activateFromManualPayment(
+          const user = await tx.user.findUniqueOrThrow({ where: { id: submission.userId }, select: { accountType: true } });
+          if (user.accountType !== "POSTER") {
+            await this.applications.paymentVerified(submission.id, submission.userId, tx);
+          } else await this.organisations.activateFromManualPayment(
             submission.userId,
             submission.organiserPlanId,
             now,
@@ -278,7 +297,15 @@ export class ManualPaymentsService {
         }
         return { submission, resolved, changed: true };
       },
-    );
+    ).catch((error: unknown) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const target = error.meta?.target;
+        if (Array.isArray(target) && target.includes("verified_provider") && target.includes("verified_transaction_id")) {
+          throw AppError.conflict(ERROR_CODES.VALIDATION_FAILED, "This provider transaction has already been used.");
+        }
+      }
+      throw error;
+    });
     if (!changed) return resolved;
 
     if (submission.user.email) {
@@ -286,10 +313,10 @@ export class ManualPaymentsService {
         to: submission.user.email,
         subject: `Your payment was approved (${resolved.reference})`,
         html: `<p>Hi${submission.user.displayName ? ` ${submission.user.displayName}` : ""},</p>
-<p>Your payment for <strong>${resolved.planSnapshot.name}</strong> has been approved and your plan is now active.</p>
+<p>Your payment for <strong>${resolved.planSnapshot.name}</strong> has been verified.${submission.platform === "ORGANISER" ? " New organiser applications now await a separate review." : " Your plan is now active."}</p>
 <p>Reference: <strong>${resolved.reference}</strong><br/>
 Amount: ${money(resolved.amountMinor, resolved.currency)}<br/>
-Activated: ${now.toISOString()}</p>`,
+Verified: ${now.toISOString()}</p>`,
       });
     }
 
@@ -305,12 +332,21 @@ Activated: ${now.toISOString()}</p>`,
     if (!submission) throw AppError.notFound("That payment");
 
     const now = this.clock.now();
-    const resolved = await this.repo.resolve({
+    const resolved = await this.repo.transaction(async (tx) => {
+      const result = await this.repo.resolve({
       id,
       status: "REJECTED",
       reviewerId: adminUserId,
       rejectionReason,
       now,
+      }, tx);
+      if (result && submission.platform === "ORGANISER") {
+        await tx.organiserApplication.updateMany({
+          where: { manualPaymentId: id, status: "PENDING_PAYMENT" },
+          data: { manualPaymentId: null },
+        });
+      }
+      return result;
     });
     if (!resolved) return submission;
 

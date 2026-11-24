@@ -39,6 +39,9 @@ import {
 } from "../mappers/manual-payment.mapper.js";
 
 const idParam = z.object({ id: z.uuid() });
+const approvePaymentBody = z.object({
+  verified_transaction_id: z.string().trim().min(4).max(160).optional(),
+}).strict().default({});
 
 function requireUser(user: AuthenticatedUser | undefined): AuthenticatedUser {
   if (!user) throw AppError.unauthenticated();
@@ -156,9 +159,10 @@ export class AdminManualPaymentsController {
   async approve(
     @CurrentUser() user: AuthenticatedUser | undefined,
     @Param(zodPipe(idParam)) params: z.infer<typeof idParam>,
+    @Body(zodPipe(approvePaymentBody)) body: z.infer<typeof approvePaymentBody>,
   ) {
     const actor = requireUser(user);
-    const row = await this.payments.approve(actor.userId, params.id);
+    const row = await this.payments.approve(actor.userId, params.id, body.verified_transaction_id);
     return toManualPaymentSubmissionResponse(row);
   }
 

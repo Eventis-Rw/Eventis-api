@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 import { SystemClock } from "../../src/common/clock.js";
 import { loadEnv } from "../../src/config/env.js";
+import { StorageService } from "../../src/infrastructure/storage/storage.service.js";
 import type { MembershipSnapshot } from "../../src/modules/findlove/infrastructure/admin-membership.repository.js";
 import { TokenService } from "../../src/modules/identity/infrastructure/token.service.js";
 
@@ -14,12 +15,13 @@ suite("repairs to the demonstrated application flows", () => {
   const db = new PrismaClient();
   const base = process.env.FLOW_API_URL ?? "http://127.0.0.1:4100/api/v1";
   const users: string[] = [];
+  const uploadedKeys: string[] = [];
   let admin: string,
     member: string,
     memberId: string,
     organiser: string,
     organiserId: string;
-  let verificationId: string, manualId: string, planId: string, roleId: string;
+  let verificationId: string, manualId: string, planId: string, roleId: string, methodId: string;
   let categoryId: string;
   const request = (
     path: string,
@@ -67,14 +69,16 @@ suite("repairs to the demonstrated application flows", () => {
     users.push(user.id);
     return {
       id: user.id,
-      token: (
-        await json<{ tokens: { accessToken: string } }>(
-          "/auth/login",
-          "",
-          "POST",
-          { phone, pin: "24680" },
-        )
-      ).tokens.accessToken,
+      token: role === "ADMIN"
+        ? (await tokens.issueAccessToken({ sub: user.id, roles: ["admin"] })).token
+        : (
+          await json<{ tokens: { accessToken: string } }>(
+            "/auth/login",
+            "",
+            "POST",
+            { phone, pin: "24680" },
+          )
+        ).tokens.accessToken,
     };
   }
   async function upload(
@@ -98,7 +102,9 @@ suite("repairs to the demonstrated application flows", () => {
       body: form,
     });
     expect(response.status).toBe(201);
-    return response.json() as Promise<{ id: string; key: string }>;
+    const result = await response.json() as { id: string; key: string };
+    uploadedKeys.push(result.key);
+    return result;
   }
   beforeAll(async () => {
     const database = new URL(process.env.DATABASE_URL!);
@@ -113,9 +119,13 @@ suite("repairs to the demonstrated application flows", () => {
     ({ id: memberId, token: member } = await identity());
     ({ id: organiserId, token: organiser } = await identity());
     categoryId = (await db.category.findFirstOrThrow()).id;
+    methodId = (await db.manualPaymentMethod.create({
+      data: { provider: "MTN_MOMO", platform: "ORGANISER", phoneNumber: "+250788000000" },
+    })).id;
   });
   afterAll(async () => {
     if (users.length) {
+      await db.organiserApplication.deleteMany({ where: { userId: { in: users } } });
       await db.manualPaymentSubmission.deleteMany({
         where: { userId: { in: users } },
       });
@@ -124,6 +134,9 @@ suite("repairs to the demonstrated application flows", () => {
     }
     if (planId) await db.organiserPlan.deleteMany({ where: { id: planId } });
     if (roleId) await db.consoleRole.deleteMany({ where: { id: roleId } });
+    if (methodId) await db.manualPaymentMethod.deleteMany({ where: { id: methodId } });
+    const storage = new StorageService(loadEnv(), new SystemClock());
+    for (const key of uploadedKeys) await storage.deleteFile(key);
     await db.$disconnect();
   });
   it("loads and persists settings and publisher categories using the canonical routes", async () => {
@@ -275,7 +288,7 @@ suite("repairs to the demonstrated application flows", () => {
     );
     expect(settle.status).toBe(422);
   });
-  it("rolls back failed activation and preserves the purchased organiser terms", async () => {
+  it("verifies payment separately from organiser approval and preserves purchased terms", async () => {
     const plan = await db.organiserPlan.create({
       data: {
         code: `flow-${randomUUID()}`,
@@ -287,6 +300,17 @@ suite("repairs to the demonstrated application flows", () => {
       },
     });
     planId = plan.id;
+    const application = await json<{ id: string; status: string }>("/organiser-applications", organiser, "POST", {
+      name: "Flow application",
+      description: "Local synthetic organiser application for regression verification.",
+      activities: "Community music",
+      location: "Kigali",
+    });
+    expect(application.status).toBe("PENDING_PAYMENT");
+    expect((await request("/organiser-applications", organiser, "POST", {
+      name: "Duplicate application", description: "A duplicate must not be accepted.",
+      activities: "Events", location: "Kigali",
+    })).status).toBe(409);
     const receipt = await upload(organiser, "PAYMENT_RECEIPT");
     const method = (
       await json<{ items: { id: string }[] }>(
@@ -305,6 +329,20 @@ suite("repairs to the demonstrated application flows", () => {
         receipt_upload_id: receipt.id,
       },
     );
+    const listedPayments = await json<{
+      items: { id: string; reference: string; status: string; user: { id: string } }[];
+      total: number;
+    }>("/admin/manual-payments?platform=organiser&page=1&limit=10", admin);
+    expect(listedPayments.total).toBeGreaterThanOrEqual(1);
+    expect(listedPayments.items).toContainEqual(
+      expect.objectContaining({
+        id: payment.id,
+        reference: payment.reference,
+        status: "pending",
+        user: expect.objectContaining({ id: organiserId }),
+      }),
+    );
+    expect((await request("/admin/manual-payments?platform=organiser", organiser)).status).toBe(403);
     await db.organiserPlan.update({
       where: { id: plan.id },
       data: {
@@ -314,30 +352,27 @@ suite("repairs to the demonstrated application flows", () => {
         priceMinor: 50000n,
       },
     });
-    expect(
-      (
-        await request(
-          `/admin/manual-payments/${payment.id}/approve`,
-          admin,
-          "POST",
-        )
-      ).status,
-    ).toBe(422);
+    const transactionId = `FLOW-${randomUUID()}`;
+    expect((await request(`/admin/manual-payments/${payment.id}/approve`, admin, "POST", {})).status).toBe(422);
+    await json(`/admin/manual-payments/${payment.id}/approve`, admin, "POST", { verified_transaction_id: transactionId });
+    await json(`/admin/manual-payments/${payment.id}/approve`, admin, "POST", { verified_transaction_id: transactionId });
     expect(
       (
         await db.manualPaymentSubmission.findUniqueOrThrow({
           where: { id: payment.id },
         })
       ).status,
-    ).toBe("PENDING");
-    expect(await db.auditLog.count({ where: { subjectId: payment.id } })).toBe(
-      0,
-    );
-    await db.organiserPlan.update({
-      where: { id: plan.id },
-      data: { active: true },
-    });
-    await json(`/admin/manual-payments/${payment.id}/approve`, admin, "POST");
+    ).toBe("APPROVED");
+    expect((await json<{ application: { status: string } }>("/me/organiser-application", organiser)).application.status).toBe("IN_REVIEW");
+    expect((await db.user.findUniqueOrThrow({ where: { id: organiserId } })).accountType).toBe("CUSTOMER");
+    expect((await request("/organisations", organiser, "POST", {})).status).toBe(403);
+    expect((await request("/events", organiser, "POST", {})).status).toBe(403);
+    expect((await request("/users/me", organiser, "PATCH", { accountType: "POSTER" })).status).toBe(403);
+    expect((await request(`/admin/organiser-applications/${application.id}/review`, organiser, "POST", { status: "APPROVED" })).status).toBe(403);
+    await json(`/admin/organiser-applications/${application.id}/review`, admin, "POST", { status: "APPROVED" });
+    expect((await db.user.findUniqueOrThrow({ where: { id: organiserId } })).accountType).toBe("POSTER");
+    expect((await json<{ roles: string[] }>("/auth/me", organiser)).roles).toContain("organizer_owner");
+    expect((await db.notification.findMany({ where: { userId: organiserId }, select: { type: true } })).map((row) => row.type)).toContain("organiser_application_approved");
     const subscription = await db.organiserSubscription.findFirstOrThrow({
       where: { userId: organiserId },
     });
@@ -345,6 +380,7 @@ suite("repairs to the demonstrated application flows", () => {
     expect(
       subscription.expiresAt!.getTime() - subscription.startsAt!.getTime(),
     ).toBe(10 * 86400000);
+    await db.organiserPlan.update({ where: { id: plan.id }, data: { active: true } });
     expect(
       (
         await json<{ items: { id: string }[] }>(
@@ -354,6 +390,102 @@ suite("repairs to the demonstrated application flows", () => {
       ).items.some((row: { id: string }) => row.id === subscription.id),
     ).toBe(true);
   });
+  it("keeps an unverified payment out of review and permits a fresh application after rejection", async () => {
+    const applicant = await identity();
+    const form = {
+      name: "Reapplication test",
+      description: "Local synthetic organiser application for regression verification.",
+      activities: "Community events",
+      location: "Kigali",
+    };
+    const application = await json<{ id: string }>("/organiser-applications", applicant.token, "POST", form);
+    const method = (await json<{ items: { id: string }[] }>("/manual-payments/methods?platform=organiser", applicant.token)).items[0]!;
+    const receipt = await upload(applicant.token, "PAYMENT_RECEIPT");
+    const payment = await json<{ id: string }>("/manual-payments", applicant.token, "POST", {
+      platform: "organiser", organiser_plan_id: planId, payment_method_id: method.id, receipt_upload_id: receipt.id,
+    });
+    await json(`/admin/manual-payments/${payment.id}/reject`, admin, "POST", { rejection_reason: "Receipt could not be verified" });
+    expect((await json<{ application: { status: string } }>("/me/organiser-application", applicant.token)).application.status).toBe("PENDING_PAYMENT");
+    expect((await db.user.findUniqueOrThrow({ where: { id: applicant.id } })).accountType).toBe("CUSTOMER");
+    const newReceipt = await upload(applicant.token, "PAYMENT_RECEIPT");
+    const second = await json<{ id: string }>("/manual-payments", applicant.token, "POST", {
+      platform: "organiser", organiser_plan_id: planId, payment_method_id: method.id, receipt_upload_id: newReceipt.id,
+    });
+    const transactionId = `FLOW-${randomUUID()}`;
+    await json(`/admin/manual-payments/${second.id}/approve`, admin, "POST", { verified_transaction_id: transactionId });
+    await json(`/admin/organiser-applications/${application.id}/review`, admin, "POST", { status: "REJECTED", rejectionReason: "Additional information needed" });
+    expect((await json<{ application: { status: string; rejectionReason: string } }>("/me/organiser-application", applicant.token)).application).toMatchObject({
+      status: "REJECTED", rejectionReason: "Additional information needed",
+    });
+    expect((await db.notification.findMany({ where: { userId: applicant.id }, select: { type: true } })).map((row) => row.type)).toContain("organiser_application_rejected");
+    expect((await request("/events", applicant.token, "POST", {})).status).toBe(403);
+    const reapplied = await json<{ id: string; status: string; manualPaymentId: string | null }>("/organiser-applications", applicant.token, "POST", form);
+    expect(reapplied.id).not.toBe(application.id);
+    expect(reapplied).toMatchObject({ status: "PENDING_PAYMENT", manualPaymentId: null });
+    const thirdReceipt = await upload(applicant.token, "PAYMENT_RECEIPT");
+    const third = await json<{ id: string }>("/manual-payments", applicant.token, "POST", {
+      platform: "organiser", organiser_plan_id: planId, payment_method_id: method.id, receipt_upload_id: thirdReceipt.id,
+    });
+    expect((await request(`/admin/manual-payments/${third.id}/approve`, admin, "POST", { verified_transaction_id: transactionId })).status).toBe(409);
+    expect((await json<{ application: { status: string } }>("/me/organiser-application", applicant.token)).application.status).toBe("PENDING_PAYMENT");
+  });
+  it("prevents concurrent reuse of a provider transaction", async () => {
+    const accounts = await Promise.all([identity(), identity()]);
+    const method = (await json<{ items: { id: string }[] }>("/manual-payments/methods?platform=organiser", accounts[0]!.token)).items[0]!;
+    const payments = await Promise.all(accounts.map(async (account) => {
+      await json("/organiser-applications", account.token, "POST", {
+        name: "Concurrent test", description: "Synthetic organiser for concurrency testing.",
+        activities: "Community events", location: "Kigali",
+      });
+      const receipt = await upload(account.token, "PAYMENT_RECEIPT");
+      return json<{ id: string }>("/manual-payments", account.token, "POST", {
+        platform: "organiser", organiser_plan_id: planId, payment_method_id: method.id, receipt_upload_id: receipt.id,
+      });
+    }));
+    const transactionId = `FLOW-${randomUUID()}`;
+    const results = await Promise.all(payments.map((payment) =>
+      request(`/admin/manual-payments/${payment.id}/approve`, admin, "POST", { verified_transaction_id: transactionId }),
+    ));
+    expect(results.map((result) => result.status).sort()).toEqual([201, 409]);
+  });
+
+  it("preserves existing organiser access for plan renewals", async () => {
+    const existing = await identity();
+    await db.user.update({ where: { id: existing.id }, data: { accountType: "POSTER" } });
+    const method = (await json<{ items: { id: string }[] }>("/manual-payments/methods?platform=organiser", existing.token)).items[0]!;
+    const receipt = await upload(existing.token, "PAYMENT_RECEIPT");
+    const payment = await json<{ id: string }>("/manual-payments", existing.token, "POST", {
+      platform: "organiser", organiser_plan_id: planId, payment_method_id: method.id, receipt_upload_id: receipt.id,
+    });
+    await json(`/admin/manual-payments/${payment.id}/approve`, admin, "POST", { verified_transaction_id: `FLOW-${randomUUID()}` });
+    expect((await db.organiserSubscription.findFirstOrThrow({ where: { userId: existing.id } })).status).toBe("ACTIVE");
+    expect((await db.user.findUniqueOrThrow({ where: { id: existing.id } })).accountType).toBe("POSTER");
+  });
+
+  it("links a receipt submitted before rollout only after the applicant completes the form", async () => {
+    const applicant = await identity();
+    const receipt = await upload(applicant.token, "PAYMENT_RECEIPT");
+    const oldPayment = await db.manualPaymentSubmission.create({
+      data: {
+        reference: `FLOW-${randomUUID().slice(0, 20)}`, userId: applicant.id, platform: "ORGANISER",
+        organiserPlanId: planId, planSnapshot: { name: "Old plan", durationDays: 10, postQuota: 5 },
+        amountMinor: 10000n, currency: "RWF", paymentMethodId: methodId,
+        paymentMethodSnapshot: { provider: "MTN_MOMO", accountName: null, phoneNumber: "+250788000000" },
+        receiptUploadId: receipt.id,
+      },
+    });
+    const transactionId = `FLOW-${randomUUID()}`;
+    expect((await request(`/admin/manual-payments/${oldPayment.id}/approve`, admin, "POST", { verified_transaction_id: transactionId })).status).toBe(409);
+    const application = await json<{ manualPaymentId: string }>("/organiser-applications", applicant.token, "POST", {
+      name: "Existing receipt", description: "Application completed after an earlier receipt submission.",
+      activities: "Community events", location: "Kigali",
+    });
+    expect(application.manualPaymentId).toBe(oldPayment.id);
+    await json(`/admin/manual-payments/${oldPayment.id}/approve`, admin, "POST", { verified_transaction_id: transactionId });
+    expect((await json<{ application: { status: string } }>("/me/organiser-application", applicant.token)).application.status).toBe("IN_REVIEW");
+    expect((await db.user.findUniqueOrThrow({ where: { id: applicant.id } })).accountType).toBe("CUSTOMER");
+  });
+
   it("round-trips organisation creation, selection and business verification", async () => {
     const created = await json<{ id: string }>(
       "/organisations",
@@ -372,7 +504,7 @@ suite("repairs to the demonstrated application flows", () => {
       items: { id: string }[];
     }>("/me/organisations", organiser);
     expect(list.activeOrganisationId).toBe(created.id);
-    expect(list.items[0]?.id).toBe(created.id);
+    expect(list.items.some((item) => item.id === created.id)).toBe(true);
     await json("/me/publisher-profile", organiser, "PATCH", {
       categoryIds: [categoryId],
       contactEmail: "flow@example.test",
