@@ -28,7 +28,7 @@ cd "$root"
 previous=$(sudo docker inspect -f '{{.Config.Image}}' eventis-api-1)
 image="eventis-api:$release_sha"
 sudo docker build -f "$release/app/Dockerfile.vps" -t "$image" "$release/app"
-sudo docker run --rm "$image" bun test src
+sudo docker run --rm "$image" bun test ./src
 # Preserve a database backup before applying forward-only migrations.
 mkdir -p "$root/backups"
 sudo docker compose --env-file compose.env exec -T db pg_dump -U eventis -Fc eventis > "$root/backups/$release_sha.dump"

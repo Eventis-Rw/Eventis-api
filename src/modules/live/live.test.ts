@@ -70,15 +70,16 @@ describe("real Live directory and media authorization", () => {
     }
   });
   it("issues subscribe-only viewer tokens and publishes only for the canonical host", async () => {
-    const fetch = spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(
+    const fetch = spyOn(globalThis, "fetch");
+    for (let i = 0; i < 4; i++) {
+      fetch.mockResolvedValueOnce(
         Response.json({
           rooms: [
             { name: id, metadata: JSON.stringify(listing), numParticipants: 1 },
           ],
         }),
-      ),
-    );
+      );
+    }
     try {
       const s = service();
       const guest = decodeJwt((await s.token(id, viewer)).participantToken);

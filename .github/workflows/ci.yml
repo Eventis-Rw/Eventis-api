@@ -43,6 +43,7 @@ jobs:
           done
       - name: Install and build shared contracts
         run: |
+          bun install --cwd .shared
           bun install
           bun node_modules/typescript/bin/tsc -p .shared/packages/contracts/tsconfig.build.json
       - name: Validate schema and migrate a clean database
@@ -53,7 +54,7 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
       - name: Unit tests
-        run: bun test src
+        run: bun test ./src
       - name: Money guard
         run: bun run guard:money
       - name: Build
@@ -80,6 +81,7 @@ jobs:
         with: { bun-version: 1.4.2 }
       - run: |
           for package in contracts tsconfig eslint-config; do (cd .shared/packages/$package && bun link); done
+          bun install --cwd .shared
           bun install
           bun node_modules/typescript/bin/tsc -p .shared/packages/contracts/tsconfig.build.json
           bunx --bun prisma generate
