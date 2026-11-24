@@ -67,6 +67,7 @@ function fixture(
     },
     user: {
       findUnique: () => Promise.resolve(account),
+      findFirst: () => Promise.resolve(account),
       create: ({ data }: { data: Record<string, unknown> }) => {
         account = {
           ...data,
@@ -103,6 +104,9 @@ function fixture(
     service,
     challenge,
     getAccount: () => account,
+    setAccount: (value: Record<string, unknown>) => {
+      account = value;
+    },
     getSessions: () => sessions,
   };
 }
@@ -187,6 +191,74 @@ describe("AlternativeAuthService", () => {
 });
 
 describe("Brevo email OTP delivery", () => {
+  it("rejects duplicate registration without sending a code or changing the account", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch");
+    try {
+      const f = fixture();
+      const existing = {
+        id: "existing-user",
+        email: "aline@example.com",
+        role: "CUSTOMER",
+        status: "ACTIVE",
+        emailVerifiedAt: now,
+      };
+      f.setAccount(existing);
+      await assert.rejects(
+        f.service.sendEmailCode({
+          email: " ALINE@Example.com ",
+          purpose: "register",
+          username: "Another name",
+        }),
+        { status: 409 },
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(f.challenge.purpose).toBe("register");
+      expect(f.challenge.consumedAt).toBeNull();
+      expect(f.getAccount()).toBe(existing);
+      expect(f.getSessions()).toBe(0);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("rejects registration if the account was created after the code was sent", async () => {
+    const f = fixture();
+    f.setAccount({ id: "existing-user", email: "aline@example.com" });
+    await assert.rejects(
+      f.service.verifyEmailCode({
+        email: "aline@example.com",
+        challengeId: "challenge-id",
+        code: "123456",
+      }),
+      { status: 409 },
+    );
+    expect(f.getSessions()).toBe(0);
+  });
+
+  it("still sends a sign-in code for an existing verified email", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{}", { status: 201 }),
+    );
+    try {
+      const f = fixture();
+      f.setAccount({
+        id: "existing-user",
+        email: "aline@example.com",
+        role: "CUSTOMER",
+        status: "ACTIVE",
+        emailVerifiedAt: now,
+      });
+      await f.service.sendEmailCode({
+        email: "ALINE@example.com",
+        purpose: "login",
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(f.challenge.purpose).toBe("login");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("sends the OTP with Brevo authentication and structured sender/recipient fields", async () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ messageId: "test-message" }), {

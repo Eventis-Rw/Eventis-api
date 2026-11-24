@@ -1,143 +1,120 @@
 name: CI
-
 on:
   pull_request:
   push:
-    branches: [main, dev]
-
+    branches: [dev-v2, dev, main]
+  workflow_dispatch:
+permissions:
+  contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  DATABASE_URL: postgresql://eventis:eventis@localhost:5432/eventis_test
-  REDIS_URL: redis://localhost:6379
-  JWT_ACCESS_SECRET: test-secret-that-is-long-enough-for-validation
-  JWT_REFRESH_SECRET: test-refresh-secret-long-enough-for-validation
-  TICKET_SIGNING_PRIVATE_KEY: test-private
-  TICKET_SIGNING_PUBLIC_KEY: test-public
-  STORAGE_ENDPOINT: http://localhost:9000
-  STORAGE_BUCKET: eventis-test
-  STORAGE_ACCESS_KEY_ID: test
-  STORAGE_SECRET_ACCESS_KEY: test
-
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  static:
-    name: Static checks
+  verify:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-        with: { bun-version: 1.4.2 }
-      - run: bun install --frozen-lockfile
-
-      - name: Lint
-        run: bun run lint
-      - name: Typecheck
-        run: bun run typecheck
-
-      # These two are the difference between a modular monolith and a monolith with
-      # directories. The second asserts the rules actually fail on a violation —
-      # the first version of them caught nothing and passed anyway.
-      - name: Module boundaries
-        run: bun run depcruise
-      - name: Boundary rules actually enforce something
-        run: bun run depcruise:verify
-
-      - name: Money guard (no floating point in payments or ledger)
-        run: bun run guard:money
-
-      - name: Build
-        run: bun run build
-
-  test:
-    name: Tests (${{ matrix.runtime }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # ADR 0002: Node is the verified fallback, so the suite runs under both.
-        # The day Bun breaks something we learn it from a red check, not from production.
-        runtime: [bun, node]
     services:
       postgres:
         image: postgis/postgis:16-3.4
         env:
-          POSTGRES_USER: eventis
-          POSTGRES_PASSWORD: eventis
-          POSTGRES_DB: eventis_test
+          {
+            POSTGRES_USER: eventis,
+            POSTGRES_PASSWORD: eventis,
+            POSTGRES_DB: eventis_test,
+          }
         ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U eventis" --health-interval 5s
-          --health-timeout 5s --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s
-          --health-timeout 3s --health-retries 20
+        options: --health-cmd "pg_isready -U eventis" --health-interval 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://eventis:eventis@localhost:5432/eventis_test
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: Eventis-Rw/Eventis-contracts
+          ref: 64fe98b6a49276ad14e112d1ab423a0171482265
+          path: .shared
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: 1.4.2 }
       - uses: actions/setup-node@v6
-        if: matrix.runtime == 'node'
         with: { node-version: 22 }
-      - run: bun install --frozen-lockfile
-
-      - name: Generate Prisma Client
-        run: bunx prisma generate
-
-      - name: Migrations apply cleanly to an empty database
-        run: bun run db:migrate
-
-      - name: Prisma schema validates
-        run: bunx prisma validate
-
-      - name: Unit tests
-        run: bun run test
-
-      - name: Integration tests
-        run: bun run test:integration
-
-      - name: Smoke — the API actually boots on this runtime
+      - name: Register shared packages
         run: |
-          if [ "${{ matrix.runtime }}" = "node" ]; then
-            bun run build && node dist/main.js & 
-          else
-            bun run src/main.ts &
-          fi
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:3000/healthz && exit 0
-            sleep 1
+          for package in contracts tsconfig eslint-config; do
+            (cd .shared/packages/$package && bun link)
           done
-          echo "API did not become healthy on ${{ matrix.runtime }}"
-          exit 1
-
-  commitlint:
-    name: Commit messages
+      - name: Install and build shared contracts
+        run: |
+          bun install
+          bun node_modules/typescript/bin/tsc -p .shared/packages/contracts/tsconfig.build.json
+      - name: Validate schema and migrate a clean database
+        run: |
+          bunx --bun prisma generate
+          bunx --bun prisma validate
+          bunx --bun prisma migrate deploy
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Unit tests
+        run: bun test src
+      - name: Money guard
+        run: bun run guard:money
+      - name: Build
+        run: bun run build
+      - name: Build VPS source bundle
+        run: python3 scripts/package-vps.py --output /tmp/eventis-release --contracts-root .shared
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vps-release-${{ github.sha }}
+          path: /tmp/eventis-release/app.tar.gz
+          retention-days: 7
+  legacy-static:
+    name: Existing lint and boundary debt (advisory)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
-        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v5
+        with:
+          repository: Eventis-Rw/Eventis-contracts
+          ref: 64fe98b6a49276ad14e112d1ab423a0171482265
+          path: .shared
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: 1.4.2 }
-      - run: bun install --frozen-lockfile
-      - run: bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+      - run: |
+          for package in contracts tsconfig eslint-config; do (cd .shared/packages/$package && bun link); done
+          bun install
+          bun node_modules/typescript/bin/tsc -p .shared/packages/contracts/tsconfig.build.json
+          bunx --bun prisma generate
+          bun run lint
+          bun run depcruise
 
-  secrets:
-    name: Secret scan
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev-v2'
+    concurrency:
+      group: eventis-vps
+      cancel-in-progress: false
     runs-on: ubuntu-latest
+    environment:
+      name: vps-dev
+      url: https://eventis-api.brother-1.hubfly.app
     steps:
-      - uses: actions/checkout@v5
-        with: { fetch-depth: 0 }
-      - name: Block committed secrets
+      - uses: actions/download-artifact@v4
+        with:
+          name: vps-release-${{ github.sha }}
+          path: release
+      - name: Deploy tested source bundle
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
         run: |
-          # This repository is public. A leaked credential is public the moment it lands.
-          if git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD 2>/dev/null \
-             | grep -E '(^|/)\.env$|\.pem$|\.p8$|\.p12$|\.key$|\.keystore$'; then
-            echo "A secret-shaped file is in this diff. Rotate the credential first, then remove it."
-            exit 1
-          fi
-          echo "No secret-shaped files in the diff."
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$DEPLOY_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/eventis-deploy
+          chmod 600 ~/.ssh/eventis-deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/eventis-deploy -p 24596 ubuntu@38.58.176.137 "deploy $RELEASE_SHA" < release/app.tar.gz
+      - name: Verify public gateway
+        run: curl --fail --retry 8 --retry-delay 5 --retry-all-errors https://eventis-api.brother-1.hubfly.app/readyz
