@@ -79,6 +79,9 @@ const envSchema = z
     CALL_TURN_URLS: optionalString,
     CALL_TURN_SHARED_SECRET: optionalString,
 
+    LIVEKIT_URL: z.string().startsWith("wss://").optional(),
+    LIVEKIT_API_KEY: optionalString,
+    LIVEKIT_API_SECRET: optionalString,
     SENTRY_DSN: optionalString,
     GOOGLE_AUTH_CLIENT_IDS: optionalString,
     APPLE_AUTH_CLIENT_IDS: optionalString,

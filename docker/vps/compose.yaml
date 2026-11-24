@@ -40,7 +40,7 @@ services:
       - 'for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do code=$$(curl -s -o /dev/null -w "%{http_code}" --aws-sigv4 "aws:amz:us-east-1:s3" --user "eventis:$$MINIO_ROOT_PASSWORD" -X PUT http://minio:9000/eventis-private); case "$$code" in 200|409) exit 0;; esac; sleep 3; done; exit 1'
     depends_on: [minio]
   api:
-    image: eventis-api:vps-initial
+    image: ${API_IMAGE:-eventis-api:vps-initial}
     restart: unless-stopped
     env_file: [api.env]
     ports: ["80:3000"]
@@ -50,7 +50,7 @@ services:
       storage-init: {condition: service_completed_successfully}
     logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
   worker:
-    image: eventis-api:vps-initial
+    image: ${API_IMAGE:-eventis-api:vps-initial}
     restart: unless-stopped
     env_file: [api.env]
     command: [node, dist/worker.js]

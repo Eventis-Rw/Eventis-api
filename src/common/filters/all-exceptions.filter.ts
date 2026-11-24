@@ -45,7 +45,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private toResponse(
     exception: unknown,
     requestId: string,
-  ): { status: number; body: ApiError } {
+  ): {
+    status: number;
+    body:
+      | ApiError
+      | { error: string; code: string; message: string; requestId: string };
+  } {
     if (
       exception instanceof Error &&
       exception.name === "PolicyViolationError" &&
@@ -84,6 +89,25 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
+      const response = exception.getResponse();
+      if (
+        status === 409 &&
+        typeof response === "object" &&
+        "error" in response &&
+        response.error === "EMAIL_ALREADY_EXISTS"
+      ) {
+        return {
+          status,
+          body: {
+            error: "EMAIL_ALREADY_EXISTS",
+            code: "EMAIL_ALREADY_EXISTS",
+            message:
+              "An account with this email already exists. Please sign in instead.",
+            requestId,
+          },
+        };
+      }
+
       return {
         status,
         body: {

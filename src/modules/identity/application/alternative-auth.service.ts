@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { HttpException, Inject, Injectable } from "@nestjs/common";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
@@ -18,6 +19,17 @@ import {
   toAuthSession,
   toAuthTokens,
 } from "../mappers/auth.mapper.js";
+
+const emailAlreadyExists = () =>
+  new HttpException(
+    {
+      error: "EMAIL_ALREADY_EXISTS",
+      code: "EMAIL_ALREADY_EXISTS",
+      message:
+        "An account with this email already exists. Please sign in instead.",
+    },
+    409,
+  );
 
 const googleKeys = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
@@ -66,6 +78,10 @@ export class AlternativeAuthService {
     // Lock the email across API instances, so parallel sends cannot bypass limits.
     const challenge = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${email}))::text`;
+      const user = await tx.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+      });
+      if (input.purpose === "register" && user) throw emailAlreadyExists();
       const recent = await tx.emailSignInCode.findFirst({
         // Failed sends are consumed below and should be retryable immediately.
         where: { email, consumedAt: null },
@@ -80,12 +96,15 @@ export class AlternativeAuthService {
         },
       });
       if (count >= 10) throw AppError.rateLimited(3600);
-      const user = await tx.user.findUnique({ where: { email } });
       // Never turn an unverified email entered in a phone profile into a login identity.
       const eligible =
         input.purpose === "register"
           ? !user
-          : Boolean(user?.emailVerifiedAt && user.status === "ACTIVE" && user.role !== "ADMIN");
+          : Boolean(
+              user?.emailVerifiedAt &&
+              user.status === "ACTIVE" &&
+              user.role !== "ADMIN",
+            );
       await tx.emailSignInCode.updateMany({
         where: { email, consumedAt: null },
         data: { consumedAt: now },
@@ -100,7 +119,7 @@ export class AlternativeAuthService {
         },
       });
     });
-    // Same response for existing and unknown accounts to avoid account enumeration.
+    // Login keeps the same response for existing and unknown accounts.
     if (challenge.purpose !== "unavailable") {
       let providerStatus: number | undefined;
       try {
@@ -158,56 +177,73 @@ export class AlternativeAuthService {
     const email = input.email.trim().toLowerCase();
     const now = this.clock.now();
     // Invalid attempts must commit, so return an outcome from the transaction before throwing.
-    const userId = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${email}))::text`;
-      const challenge = await tx.emailSignInCode.findUnique({
-        where: { id: input.challengeId },
-      });
-      if (
-        !challenge ||
-        challenge.email !== email ||
-        challenge.consumedAt ||
-        challenge.expiresAt <= now ||
-        challenge.attempts >= 5 ||
-        challenge.purpose === "unavailable"
-      )
-        return null;
-      await tx.emailSignInCode.update({
-        where: { id: challenge.id },
-        data: { attempts: { increment: 1 } },
-      });
-      if (
-        !otpMatches(
-          input.code,
-          challenge.codeHash,
-          this.tokens.otpPepperValue(),
+    let userId: string | null;
+    try {
+      userId = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${email}))::text`;
+        const challenge = await tx.emailSignInCode.findUnique({
+          where: { id: input.challengeId },
+        });
+        if (
+          !challenge ||
+          challenge.email !== email ||
+          challenge.consumedAt ||
+          challenge.expiresAt <= now ||
+          challenge.attempts >= 5 ||
+          challenge.purpose === "unavailable"
         )
-      )
-        return null;
-      const existing = await tx.user.findUnique({ where: { email } });
-      if (challenge.purpose === "register" && existing) return null;
-      if (
-        challenge.purpose === "login" &&
-        (!existing?.emailVerifiedAt || existing.status !== "ACTIVE" || existing.role === "ADMIN")
-      )
-        return null;
-      const user =
-        existing ??
-        (await tx.user.create({
-          data: {
-            email,
-            emailVerifiedAt: now,
-            displayName: challenge.username,
-            firstName: challenge.username,
-            accountType: "CUSTOMER",
-          },
-        }));
-      await tx.emailSignInCode.update({
-        where: { id: challenge.id },
-        data: { consumedAt: now },
+          return null;
+        await tx.emailSignInCode.update({
+          where: { id: challenge.id },
+          data: { attempts: { increment: 1 } },
+        });
+        if (
+          !otpMatches(
+            input.code,
+            challenge.codeHash,
+            this.tokens.otpPepperValue(),
+          )
+        )
+          return null;
+        const existing = await tx.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
+        });
+        if (challenge.purpose === "register" && existing)
+          throw emailAlreadyExists();
+        if (
+          challenge.purpose === "login" &&
+          (!existing?.emailVerifiedAt ||
+            existing.status !== "ACTIVE" ||
+            existing.role === "ADMIN")
+        )
+          return null;
+        const user =
+          existing ??
+          (await tx.user.create({
+            data: {
+              email,
+              emailVerifiedAt: now,
+              displayName: challenge.username,
+              firstName: challenge.username,
+              accountType: "CUSTOMER",
+            },
+          }));
+        await tx.emailSignInCode.update({
+          where: { id: challenge.id },
+          data: { consumedAt: now },
+        });
+        return user.id;
       });
-      return user.id;
-    });
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "P2002"
+      )
+        throw emailAlreadyExists();
+      throw error;
+    }
     if (!userId)
       throw AppError.unauthenticated(
         "Invalid or expired code. Request a new code and try again.",
@@ -312,7 +348,12 @@ export class AlternativeAuthService {
 
   private async session(userId: string) {
     const user = await this.users.findById(userId);
-    if (!user || user.status !== "ACTIVE" || user.deletedAt || user.role === "ADMIN")
+    if (
+      !user ||
+      user.status !== "ACTIVE" ||
+      user.deletedAt ||
+      user.role === "ADMIN"
+    )
       throw AppError.unauthenticated();
     const refresh = this.tokens.issueRefreshToken();
     const roles = toAuthRoles(user);

@@ -44,3 +44,24 @@ Administrator bootstrap (after the admin-email-password migration):
   Sign in to the real admin console using that email and password; no phone/PIN is needed.
   Ordinary reruns are idempotent. Password changes require ADMIN_SEED_ROTATE_PASSWORD=true.
   Do not run the general demo data seed to create an administrator.
+
+Automatic deployment from dev-v2
+------------------------------
+The CI workflow verifies a clean PostgreSQL migration, typecheck, unit tests,
+money guard, production build and packaged VPS source before deploying a push
+on dev-v2. Pull requests run verification without deploying.
+
+Repository configuration required:
+- Actions secret VPS_DEPLOY_KEY: the dedicated SSH private key, whose public
+  key is installed with restrict and a forced deploy-dispatch.sh command.
+- Actions variable VPS_KNOWN_HOSTS: the verified SSH host-key entry for
+  [38.58.176.137]:24596.
+
+The dispatcher accepts only "deploy <40-character SHA>" and reads the tested
+archive on stdin. It backs up PostgreSQL before migrations, retains prior
+images, checks API/worker startup and restores the previous app image if
+activation or readiness fails. Database migrations are forward-only.
+
+LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET belong in ~/eventis/api.env
+on the VPS. They are kept outside release archives and GitHub source. Updating
+api.env requires recreating API/worker containers to load the new values.
