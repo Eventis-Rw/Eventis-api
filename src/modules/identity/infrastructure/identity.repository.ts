@@ -3,10 +3,10 @@ import type {
   OtpVerification as PrismaOtp,
   User as PrismaUser,
   RefreshSession as PrismaSession,
-  Prisma,
 } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
+import { AppError } from "../../../common/errors/app-error.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import type { OtpPurpose, OtpRecord } from "../domain/otp.js";
 import type { RefreshSession, User } from "../domain/user.js";
@@ -95,8 +95,30 @@ export class UserRepository {
   async list(): Promise<User[]> {
     const rows = await this.prisma.user.findMany({
       orderBy: { createdAt: "desc" },
+      include: {
+        activeOrganisation: {
+          select: { name: true, description: true, deletedAt: true },
+        },
+        ownedOrganisations: {
+          where: { deletedAt: null },
+          select: { name: true, description: true },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+        },
+      },
     });
-    return rows.map(toUserDomain);
+    return rows.map((row) => {
+      const organisation =
+        row.activeOrganisation && !row.activeOrganisation.deletedAt
+          ? row.activeOrganisation
+          : row.ownedOrganisations[0];
+      return toUserDomain({
+        ...row,
+        organizationName: organisation?.name ?? row.organizationName,
+        organizationDescription:
+          organisation?.description ?? row.organizationDescription,
+      });
+    });
   }
 
   async findByPhone(phone: string): Promise<User | null> {
@@ -147,12 +169,15 @@ export class UserRepository {
   async setStatus(
     userId: string,
     status: "ACTIVE" | "INACTIVE",
+    delegated = false,
   ): Promise<User> {
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.user.update({
-        where: { id: userId },
+      const { count } = await tx.user.updateMany({
+        where: { id: userId, ...(delegated ? { role: { not: "ADMIN" } } : {}) },
         data: { status },
       });
+      if (!count) throw AppError.notFound("That manageable user");
+      const row = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       if (status === "INACTIVE") {
         await tx.refreshSession.updateMany({
           where: { userId, revokedAt: null },
@@ -191,7 +216,7 @@ export class UserRepository {
   ): Promise<User> {
     const row = await this.prisma.user.update({
       where: { id: userId },
-      data: data as Prisma.UserUpdateInput,
+      data: data,
     });
     return toUserDomain(row);
   }
@@ -235,6 +260,7 @@ export class UserRepository {
       if (claimedOtp.count !== 1) throw new Error("otp already used");
 
       let userRow = await tx.user.findUnique({ where: { phone: input.phone } });
+      if (userRow?.role === "ADMIN") throw new Error("admin password required");
       if (userRow && otp.purpose === "SIGN_UP") {
         throw new Error("phone already registered");
       }

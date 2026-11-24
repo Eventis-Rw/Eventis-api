@@ -32,6 +32,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "bun run scripts/seed.ts",
+    "db:seed:admin": "bun run scripts/seed-admin.ts",
     "prisma:generate": "prisma generate",
     "openapi": "bun run scripts/generate-openapi.ts",
     "verify": "bun run lint && bun run typecheck && bun run depcruise && bun run depcruise:verify && bun run guard:money && bun run test && bun run build"

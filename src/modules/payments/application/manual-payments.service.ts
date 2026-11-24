@@ -48,7 +48,10 @@ export class ManualPaymentsService {
       receiptUploadId: string;
     },
   ): Promise<ManualPaymentSubmission> {
-    const open = await this.repo.findOpenSubmissionForUser(userId, input.platform);
+    const open = await this.repo.findOpenSubmissionForUser(
+      userId,
+      input.platform,
+    );
     if (open) {
       throw AppError.conflict(
         ERROR_CODES.VALIDATION_FAILED,
@@ -56,7 +59,10 @@ export class ManualPaymentsService {
       );
     }
 
-    const receipt = await this.repo.findReceiptUpload(input.receiptUploadId, userId);
+    const receipt = await this.repo.findReceiptUpload(
+      input.receiptUploadId,
+      userId,
+    );
     if (!receipt || receipt.purpose !== "PAYMENT_RECEIPT") {
       throw AppError.validation({
         receiptUploadId: ["Upload your payment screenshot first."],
@@ -84,11 +90,17 @@ export class ManualPaymentsService {
 
     if (input.platform === "FINDLOVE") {
       if (!input.installmentPlanId) {
-        throw AppError.validation({ installmentPlanId: ["Choose a membership plan."] });
+        throw AppError.validation({
+          installmentPlanId: ["Choose a membership plan."],
+        });
       }
-      const plan = await this.payments.findInstallmentPlanById(input.installmentPlanId);
+      const plan = await this.payments.findInstallmentPlanById(
+        input.installmentPlanId,
+      );
       if (!plan || !plan.isActive) {
-        throw AppError.validation({ installmentPlanId: ["That plan is no longer available."] });
+        throw AppError.validation({
+          installmentPlanId: ["That plan is no longer available."],
+        });
       }
       installmentPlanId = plan.id;
       amountMinor = plan.priceMinor;
@@ -101,9 +113,13 @@ export class ManualPaymentsService {
       };
     } else {
       if (!input.organiserPlanId) {
-        throw AppError.validation({ organiserPlanId: ["Choose an organiser plan."] });
+        throw AppError.validation({
+          organiserPlanId: ["Choose an organiser plan."],
+        });
       }
-      const plan = await this.organisations.getActivePlan(input.organiserPlanId);
+      const plan = await this.organisations.getActivePlan(
+        input.organiserPlanId,
+      );
       organiserPlanId = plan.id;
       amountMinor = plan.priceMinor;
       currency = plan.currency;
@@ -194,44 +210,76 @@ export class ManualPaymentsService {
     return row;
   }
 
-  async approve(adminUserId: string, id: string): Promise<ManualPaymentSubmission> {
-    const submission = await this.repo.findSubmissionById(id);
-    if (!submission) throw AppError.notFound("That payment");
-
+  async approve(
+    adminUserId: string,
+    id: string,
+  ): Promise<ManualPaymentSubmission> {
     const now = this.clock.now();
-    const resolved = await this.repo.resolve({
-      id,
-      status: "APPROVED",
-      reviewerId: adminUserId,
-      rejectionReason: null,
-      now,
-    });
-    // Already resolved by an earlier request (or another admin) — idempotent no-op.
-    if (!resolved) return submission;
-
-    if (submission.platform === "FINDLOVE") {
-      if (!submission.installmentPlanId) {
-        throw new Error(`Manual payment ${submission.reference} has no installment plan`);
-      }
-      const plan = await this.payments.findInstallmentPlanById(submission.installmentPlanId);
-      if (!plan) {
-        throw new Error(`Manual payment ${submission.reference}'s plan no longer exists`);
-      }
-      await this.payments.activateFindLoveFromManualPayment({
-        userId: submission.userId,
-        plan,
-        now,
-      });
-    } else {
-      if (!submission.organiserPlanId) {
-        throw new Error(`Manual payment ${submission.reference} has no organiser plan`);
-      }
-      await this.organisations.activateFromManualPayment(
-        submission.userId,
-        submission.organiserPlanId,
-        now,
-      );
-    }
+    const { submission, resolved, changed } = await this.repo.transaction(
+      async (tx) => {
+        const submission = await this.repo.findSubmissionById(id, tx);
+        if (!submission) throw AppError.notFound("That payment");
+        const resolved = await this.repo.resolve(
+          {
+            id,
+            status: "APPROVED",
+            reviewerId: adminUserId,
+            rejectionReason: null,
+            now,
+          },
+          tx,
+        );
+        if (!resolved)
+          return { submission, resolved: submission, changed: false };
+        if (submission.platform === "FINDLOVE") {
+          if (!submission.installmentPlanId)
+            throw AppError.validation({
+              installmentPlanId: ["That membership plan is unavailable."],
+            });
+          const plan = await this.payments.findInstallmentPlanById(
+            submission.installmentPlanId,
+            tx,
+          );
+          if (!plan)
+            throw AppError.validation({
+              installmentPlanId: ["That membership plan is unavailable."],
+            });
+          await this.payments.activateFindLoveFromManualPayment(
+            {
+              userId: submission.userId,
+              plan: {
+                ...plan,
+                priceMinor: submission.amountMinor,
+                durationDays: submission.planSnapshot.durationDays,
+              },
+              now,
+            },
+            tx,
+          );
+        } else {
+          if (!submission.organiserPlanId)
+            throw AppError.validation({
+              organiserPlanId: ["That organiser plan is unavailable."],
+            });
+          await this.organisations.activateFromManualPayment(
+            submission.userId,
+            submission.organiserPlanId,
+            now,
+            tx,
+            {
+              durationDays: submission.planSnapshot.durationDays,
+              priceMinor: submission.amountMinor,
+              postQuota:
+                typeof submission.planSnapshot.postQuota === "number"
+                  ? submission.planSnapshot.postQuota
+                  : null,
+            },
+          );
+        }
+        return { submission, resolved, changed: true };
+      },
+    );
+    if (!changed) return resolved;
 
     if (submission.user.email) {
       void this.emails.sendBestEffort({

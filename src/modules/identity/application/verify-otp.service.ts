@@ -134,6 +134,7 @@ export class VerifyOtpService {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      if (message === "admin password required") throw AppError.unauthenticated("Use administrator email and password to sign in.");
       if (message === "user inactive") {
         throw AppError.forbidden("This account is inactive");
       }

@@ -55,7 +55,7 @@ const envSchema = z
       .regex(/^[a-z][a-z0-9+.-]*$/i)
       .default("mobile"),
 
-    PAYMENT_PROVIDER: z.enum(["fake", "aggregator"]).default("fake"),
+    PAYMENT_PROVIDER: z.enum(["fake", "aggregator", "manual"]).default("fake"),
     PAYMENT_PROVIDER_BASE_URL: optionalUrl,
     PAYMENT_PROVIDER_API_KEY: optionalString,
     PAYMENT_WEBHOOK_SECRET: optionalString,
@@ -66,7 +66,8 @@ const envSchema = z
     AT_API_KEY: optionalString,
 
     AT_ENV: z.preprocess(
-      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
       z.enum(["sandbox", "production"]).optional(),
     ),
     AT_SENDER_ID: optionalString,
@@ -84,7 +85,7 @@ const envSchema = z
     AUTH_EMAIL_FROM: optionalString,
 
     /** `fake` for local/tests (logs instead of sending); `brevo` for real email via Brevo. */
-    EMAIL_PROVIDER: z.enum(["fake", "brevo"]).default("fake"),
+    EMAIL_PROVIDER: z.enum(["fake", "brevo", "disabled"]).default("fake"),
     BREVO_API_KEY: optionalString,
     BREVO_SENDER_EMAIL: optionalString,
     BREVO_SENDER_NAME: optionalString,
@@ -118,7 +119,8 @@ const envSchema = z
   .refine(
     (e) => !(e.FINDLOVE_MEMBERSHIP_AUTO_APPROVE && e.NODE_ENV === "production"),
     {
-      message: "FINDLOVE_MEMBERSHIP_AUTO_APPROVE must not be enabled in production",
+      message:
+        "FINDLOVE_MEMBERSHIP_AUTO_APPROVE must not be enabled in production",
       path: ["FINDLOVE_MEMBERSHIP_AUTO_APPROVE"],
     },
   )
@@ -170,13 +172,10 @@ const envSchema = z
     message: 'EMAIL_PROVIDER must not be "fake" in production',
     path: ["EMAIL_PROVIDER"],
   })
-  .refine(
-    (e) => e.EMAIL_PROVIDER !== "brevo" || Boolean(e.BREVO_API_KEY),
-    {
-      message: "BREVO_API_KEY is required when EMAIL_PROVIDER=brevo",
-      path: ["BREVO_API_KEY"],
-    },
-  )
+  .refine((e) => e.EMAIL_PROVIDER !== "brevo" || Boolean(e.BREVO_API_KEY), {
+    message: "BREVO_API_KEY is required when EMAIL_PROVIDER=brevo",
+    path: ["BREVO_API_KEY"],
+  })
   .refine(
     (e) => e.EMAIL_PROVIDER !== "brevo" || Boolean(e.BREVO_SENDER_EMAIL),
     {

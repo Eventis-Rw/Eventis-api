@@ -1,0 +1,64 @@
+name: eventis
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eventis
+      POSTGRES_USER: eventis
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U eventis -d eventis"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redis:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  minio:
+    image: pgsty/minio
+    restart: unless-stopped
+    command: [server, /data]
+    environment:
+      MINIO_ROOT_USER: eventis
+      MINIO_ROOT_PASSWORD: ${STORAGE_PASSWORD}
+    volumes: [uploads:/data]
+  storage-init:
+    image: curlimages/curl:8.16.0
+    environment:
+      MINIO_ROOT_PASSWORD: ${STORAGE_PASSWORD}
+    entrypoint: [/bin/sh, -c]
+    command:
+      - 'for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do code=$$(curl -s -o /dev/null -w "%{http_code}" --aws-sigv4 "aws:amz:us-east-1:s3" --user "eventis:$$MINIO_ROOT_PASSWORD" -X PUT http://minio:9000/eventis-private); case "$$code" in 200|409) exit 0;; esac; sleep 3; done; exit 1'
+    depends_on: [minio]
+  api:
+    image: eventis-api:vps-initial
+    restart: unless-stopped
+    env_file: [api.env]
+    ports: ["80:3000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      storage-init: {condition: service_completed_successfully}
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+  worker:
+    image: eventis-api:vps-initial
+    restart: unless-stopped
+    env_file: [api.env]
+    command: [node, dist/worker.js]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+volumes:
+  database:
+  redis:
+  uploads:

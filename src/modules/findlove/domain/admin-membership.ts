@@ -19,6 +19,8 @@ export interface Membership {
   permissions: Permissions;
 }
 export interface Member {
+  verificationId?: string;
+  hasDocumentBack?: boolean;
   id: string;
   name: string;
   username: string;
@@ -31,6 +33,8 @@ export interface Member {
 }
 export interface Payment {
   id: string;
+  reference?: string;
+  source?: "manual" | "reference";
   memberId: string;
   plan: Plan;
   permissions: Permissions;
@@ -325,6 +329,10 @@ export function applyMembershipCommand(
     }
     case "settle": {
       const payment = state.payments.find((p) => p.id === command.id);
+      requireValue(
+        payment?.source !== "manual",
+        "Review receipt submissions in Manual Payments.",
+      );
       requireValue(
         payment?.status === "pending",
         "Only pending payments can be resolved.",

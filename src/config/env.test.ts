@@ -24,6 +24,20 @@ describe("loadEnv", () => {
     expect(env.PAYMENT_PROVIDER).toBe("fake");
   });
 
+  it("allows production manual receipts with email explicitly disabled", () => {
+    expect(
+      loadEnv({
+        ...valid,
+        NODE_ENV: "production",
+        PAYMENT_PROVIDER: "manual",
+        EMAIL_PROVIDER: "disabled",
+        SMS_PROVIDER: "africas_talking",
+        AT_USERNAME: "app",
+        AT_API_KEY: "key",
+      }).PAYMENT_PROVIDER,
+    ).toBe("manual");
+  });
+
   it("refuses a short JWT secret rather than running with weak signing", () => {
     expect(() => loadEnv({ ...valid, JWT_ACCESS_SECRET: "short" })).toThrow(
       /JWT_ACCESS_SECRET/,

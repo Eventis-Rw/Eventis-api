@@ -318,19 +318,20 @@ are all configured, profile and event images are uploaded to Cloudinary and the
 returned `secure_url` is stored in the profile/event record. Keep these values
 only in the local environment or deployment secret manager.
 
-Authentication uses a five-digit PIN after signup. Signup verifies a six-digit
-phone OTP and sets the PIN; normal login accepts only the phone number and PIN.
-New accounts default to the `CUSTOMER` account type. Administrators use a
-separate `ADMIN` role and can view all events, list users, suspend accounts,
-and reactivate accounts through the `/api/v1/admin` endpoints. Promote the
-first administrator directly in the database:
+Consumer phone authentication uses a five-digit PIN after SMS signup. Administrators sign in separately with email and password through `POST /api/v1/auth/admin/login`.
 
-```sql
-UPDATE users SET role = 'ADMIN' WHERE phone = '+250788123456';
+To bootstrap the initial administrator, put `ADMIN_SEED_EMAIL` and `ADMIN_SEED_PASSWORD` in the backend environment (password: at least 12 characters, up to 256 UTF-8 bytes), apply migrations to the intended database, and run:
+
+```sh
+bun run db:migrate
+bun run db:seed:admin
 ```
 
-Existing users can use `POST /api/v1/auth/request-pin-reset` followed by
-`POST /api/v1/auth/reset-pin` to establish or change a PIN.
+The seed creates a dedicated active `ADMIN` with no phone requirement and stores only a randomly salted scrypt hash. It does not print the password, promote consumer accounts, or reset an existing password on ordinary reruns. Set `ADMIN_SEED_ROTATE_PASSWORD=true` explicitly to rotate a seeded administrator's password; this also revokes refresh sessions. Keep seed credentials server-only and out of source control. `ADMIN_SEED_NAME` optionally sets the display name.
+
+Public phone/PIN, email OTP, and social sign-in do not create administrator sessions. Admin login is rate-limited by email and client IP across API instances. The existing access/refresh tokens and admin permissions continue to protect the dashboard.
+
+Consumer users can use `POST /api/v1/auth/request-pin-reset` followed by `POST /api/v1/auth/reset-pin` to establish or change a PIN.
 
 ## Testing
 

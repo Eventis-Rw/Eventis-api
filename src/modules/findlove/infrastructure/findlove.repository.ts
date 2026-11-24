@@ -32,6 +32,12 @@ export interface LoveProfileWithPhotos extends LoveProfile {
 
 @Injectable()
 export class FindLoveRepository {
+  ageVerificationDocument(id: string) {
+    return this.prisma.ageVerification.findUnique({
+      where: { id },
+      select: { frontKey: true, backKey: true },
+    });
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
@@ -70,7 +76,8 @@ export class FindLoveRepository {
         accountType,
         startsAt: now,
         expiresAt: new Date(now.getTime() + DEV_MEMBERSHIP_PERIOD_MS),
-        permissionsSnapshot: defaultPermissions() as unknown as Prisma.InputJsonValue,
+        permissionsSnapshot:
+          defaultPermissions(),
       },
     });
   }

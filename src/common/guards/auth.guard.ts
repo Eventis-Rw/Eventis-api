@@ -24,6 +24,7 @@ export interface AuthenticatedUser {
   phone?: string;
   role: string;
   roles: string[];
+  consolePermissions?: string[];
 }
 
 declare module "fastify" {
@@ -77,6 +78,7 @@ export class AuthGuard implements CanActivate {
       select: {
         phone: true,
         role: true,
+        consoleRole: { select: { permissions: true } },
         accountType: true,
         status: true,
         deletedAt: true,
@@ -86,10 +88,18 @@ export class AuthGuard implements CanActivate {
       throw AppError.unauthenticated("This account is no longer active");
     // Role and account restrictions take effect immediately, even for unexpired JWTs.
     const roles: string[] = [];
-    if (account.role === "ADMIN") roles.push("admin");
+    const consolePermissions =
+      account.role === "ADMIN" ? account.consoleRole?.permissions : undefined;
+    if (account.role === "ADMIN" && !consolePermissions) roles.push("admin");
     if (account.accountType === "POSTER") roles.push("organizer_owner");
     if (!roles.length) roles.push("customer");
-    request.user = { userId, phone: account.phone ?? "", role: roles[0]!, roles };
+    request.user = {
+      userId,
+      phone: account.phone ?? "",
+      role: roles[0]!,
+      roles,
+      ...(consolePermissions ? { consolePermissions } : {}),
+    };
 
     return true;
   }

@@ -41,6 +41,7 @@ export class LoginService {
     if (
       !user ||
       user.status !== "ACTIVE" ||
+      user.role === "ADMIN" ||
       !user.pinHash ||
       !this.tokens.pinMatches(input.pin, user.pinHash)
     ) {

@@ -11,7 +11,10 @@ import {
 } from "@nestjs/common";
 
 import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+import {
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -111,6 +114,7 @@ function actorFrom(user: AuthenticatedUser | undefined): AccessUser {
 
 @Controller({ path: "admin/event-installments", version: "1" })
 @UseGuards(AuthGuard, RolesGuard)
+@ConsoleAccess("installments:manage")
 @Roles("admin")
 export class AdminEventInstallmentsController {
   constructor(
@@ -126,14 +130,11 @@ export class AdminEventInstallmentsController {
     private readonly reports: InstallmentReportsService,
   ) {}
 
-
   @Get("plans")
   async listPlans(@Query(zodPipe(listPlansDto)) query: ListPlansDto) {
     const items = await this.plans.list({
       isActive:
-        query.is_active === undefined
-          ? undefined
-          : query.is_active === "true",
+        query.is_active === undefined ? undefined : query.is_active === "true",
     });
     return { plans: items.map(toInstallmentPlanWire) };
   }
@@ -145,10 +146,12 @@ export class AdminEventInstallmentsController {
         await this.plans.create({
           name: body.name,
           description: body.description,
-          frequency: body.frequency.toUpperCase() as "WEEKLY" | "MONTHLY" | "YEARLY",
+          frequency: body.frequency.toUpperCase() as
+            "WEEKLY" | "MONTHLY" | "YEARLY",
           intervalCount: body.interval_count,
           installmentCount: body.installment_count,
-          initialPaymentType: body.initial_payment_type.toUpperCase() as "FIXED" | "PERCENT",
+          initialPaymentType: body.initial_payment_type.toUpperCase() as
+            "FIXED" | "PERCENT",
           initialPaymentValue: BigInt(body.initial_payment_value),
           interestRateBps: body.interest_rate_bps,
           lateFeeType: body.late_fee_type.toUpperCase() as "FIXED" | "PERCENT",
@@ -183,9 +186,7 @@ export class AdminEventInstallmentsController {
           ...(body.frequency !== undefined
             ? {
                 frequency: body.frequency.toUpperCase() as
-                  | "WEEKLY"
-                  | "MONTHLY"
-                  | "YEARLY",
+                  "WEEKLY" | "MONTHLY" | "YEARLY",
               }
             : {}),
           ...(body.interval_count !== undefined
@@ -197,8 +198,7 @@ export class AdminEventInstallmentsController {
           ...(body.initial_payment_type !== undefined
             ? {
                 initialPaymentType: body.initial_payment_type.toUpperCase() as
-                  | "FIXED"
-                  | "PERCENT",
+                  "FIXED" | "PERCENT",
               }
             : {}),
           ...(body.initial_payment_value !== undefined
@@ -210,8 +210,7 @@ export class AdminEventInstallmentsController {
           ...(body.late_fee_type !== undefined
             ? {
                 lateFeeType: body.late_fee_type.toUpperCase() as
-                  | "FIXED"
-                  | "PERCENT",
+                  "FIXED" | "PERCENT",
               }
             : {}),
           ...(body.late_fee_value !== undefined
@@ -238,10 +237,11 @@ export class AdminEventInstallmentsController {
     @Body(zodPipe(setPlanStatusDto)) body: SetPlanStatusDto,
   ) {
     return {
-      plan: toInstallmentPlanWire(await this.plans.setActive(id, body.is_active)),
+      plan: toInstallmentPlanWire(
+        await this.plans.setActive(id, body.is_active),
+      ),
     };
   }
-
 
   @Post("preview")
   async preview(@Body(zodPipe(previewDto)) body: PreviewDto) {
@@ -269,7 +269,6 @@ export class AdminEventInstallmentsController {
       })),
     };
   }
-
 
   @Post("agreements")
   async assignPlan(
@@ -303,7 +302,8 @@ export class AdminEventInstallmentsController {
           totalAmountMinor: BigInt(body.total_amount_minor),
           initialPaymentMinor: BigInt(body.initial_payment_minor),
           interestRateBps: body.interest_rate_bps,
-          frequency: body.frequency.toUpperCase() as "WEEKLY" | "MONTHLY" | "YEARLY",
+          frequency: body.frequency.toUpperCase() as
+            "WEEKLY" | "MONTHLY" | "YEARLY",
           intervalCount: body.interval_count,
           installmentCount: body.installment_count,
           startDate: body.start_date,
@@ -363,7 +363,8 @@ export class AdminEventInstallmentsController {
     return {
       agreement: toInstallmentAgreementWire(
         await this.agreements.revise(actorFrom(user), id, {
-          frequency: body.frequency.toUpperCase() as "WEEKLY" | "MONTHLY" | "YEARLY",
+          frequency: body.frequency.toUpperCase() as
+            "WEEKLY" | "MONTHLY" | "YEARLY",
           intervalCount: body.interval_count,
           installmentCount: body.installment_count,
           startDate: body.start_date,
@@ -415,7 +416,6 @@ export class AdminEventInstallmentsController {
     };
   }
 
-
   @Post("schedules/:id/due-date")
   async adjustDueDate(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -446,7 +446,6 @@ export class AdminEventInstallmentsController {
       ),
     };
   }
-
 
   @Post("payments/manual")
   async recordManualPayment(
@@ -498,7 +497,6 @@ export class AdminEventInstallmentsController {
       ),
     };
   }
-
 
   @Post("refunds")
   async requestRefund(
@@ -571,7 +569,6 @@ export class AdminEventInstallmentsController {
     };
   }
 
-
   @Post("late-fees")
   async applyLateFee(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -619,7 +616,6 @@ export class AdminEventInstallmentsController {
     };
   }
 
-
   @Post("overdue-sweep")
   @HttpCode(200)
   async overdueSweep(@Body(zodPipe(overdueSweepDto)) body: OverdueSweepDto) {
@@ -636,7 +632,6 @@ export class AdminEventInstallmentsController {
     });
     return { notifications_created: created };
   }
-
 
   @Get("notifications")
   async listNotifications(
@@ -676,9 +671,10 @@ export class AdminEventInstallmentsController {
     return { success: true as const };
   }
 
-
   @Get("reports/summary")
-  async reportSummary(@Query(zodPipe(reportSummaryDto)) query: ReportSummaryDto) {
+  async reportSummary(
+    @Query(zodPipe(reportSummaryDto)) query: ReportSummaryDto,
+  ) {
     const summary = await this.reports.summary({
       ...(query.created_from ? { createdFrom: query.created_from } : {}),
       ...(query.created_to ? { createdTo: query.created_to } : {}),
@@ -696,7 +692,9 @@ export class AdminEventInstallmentsController {
   }
 
   @Get("reports/recent-payments")
-  async recentPayments(@Query(zodPipe(recentPaymentsDto)) query: RecentPaymentsDto) {
+  async recentPayments(
+    @Query(zodPipe(recentPaymentsDto)) query: RecentPaymentsDto,
+  ) {
     const payments = await this.reports.recentPayments({
       limit: query.limit,
       ...(query.customer_id ? { customerId: query.customer_id } : {}),

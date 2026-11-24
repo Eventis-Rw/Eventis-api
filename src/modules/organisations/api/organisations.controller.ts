@@ -10,19 +10,13 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import type {
-  BusinessVerificationStatus,
-  OrganisationRole,
-  OrganiserPlanInterval,
-  PromotionPlacement,
-  PromotionStatus,
-} from "@prisma/client";
 import { z } from "zod";
 
+import { CurrentUser } from "../../../common/decorators/current-user.decorator.js";
 import {
-  CurrentUser,
-} from "../../../common/decorators/current-user.decorator.js";
-import { Roles } from "../../../common/decorators/roles.decorator.js";
+  ConsoleAccess,
+  Roles,
+} from "../../../common/decorators/roles.decorator.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import {
   AuthGuard,
@@ -51,9 +45,9 @@ const organisationSchema = z.object({
   businessType: z.string().trim().max(80).nullable().optional(),
   logoKey: z.string().trim().max(500).nullable().optional(),
 });
-const organisationPatchSchema = organisationSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-);
+const organisationPatchSchema = organisationSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0);
 const memberSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(["ADMIN", "EDITOR"]),
@@ -72,14 +66,22 @@ const publisherProfileSchema = z
     socialLinks: socialLinksSchema.optional(),
     legalName: z.string().trim().max(160).nullable().optional(),
     registrationNumber: z.string().trim().max(30).nullable().optional(),
-    taxId: z.string().trim().regex(/^\d{9}$/).nullable().optional(),
+    taxId: z
+      .string()
+      .trim()
+      .regex(/^\d{9}$/)
+      .nullable()
+      .optional(),
     categoryIds: z.array(z.string().uuid()).max(5).optional(),
   })
   .refine((value) => Object.keys(value).length > 0);
 const businessVerificationSchema = z.object({
   legalName: z.string().trim().min(2).max(160),
   registrationNumber: z.string().trim().min(3).max(30),
-  taxId: z.string().trim().regex(/^\d{9}$/),
+  taxId: z
+    .string()
+    .trim()
+    .regex(/^\d{9}$/),
   representativeName: z.string().trim().min(2).max(160),
   paymentWebsite: z.string().trim().url().max(500),
   documentKey: z.string().trim().min(1).max(500),
@@ -182,11 +184,7 @@ export class OrganisationsController {
     @Body(zodPipe(organisationPatchSchema))
     body: z.infer<typeof organisationPatchSchema>,
   ) {
-    return this.organisations.update(
-      requireUser(user).userId,
-      params.id,
-      body,
-    );
+    return this.organisations.update(requireUser(user).userId, params.id, body);
   }
 
   @Roles("organizer_owner", "admin")
@@ -205,11 +203,10 @@ export class OrganisationsController {
     @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>,
     @Body(zodPipe(memberSchema)) body: z.infer<typeof memberSchema>,
   ) {
-    return this.organisations.addMember(
-      requireUser(user).userId,
-      params.id,
-      { userId: body.userId, role: body.role as OrganisationRole },
-    );
+    return this.organisations.addMember(requireUser(user).userId, params.id, {
+      userId: body.userId,
+      role: body.role,
+    });
   }
 
   @Roles("organizer_owner", "admin")
@@ -285,6 +282,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("organisers:verify")
   @Get("admin/business-verifications")
   listBusinessVerifications(
     @Query(zodPipe(businessVerificationListSchema))
@@ -293,11 +291,12 @@ export class OrganisationsController {
     return this.organisations.listBusinessVerifications({
       page: query.page,
       limit: query.limit,
-      status: query.status as BusinessVerificationStatus | undefined,
+      status: query.status,
     });
   }
 
   @Roles("admin")
+  @ConsoleAccess("organisers:verify")
   @Patch("admin/business-verifications/:id")
   reviewBusinessVerification(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -323,13 +322,11 @@ export class OrganisationsController {
 
   @Roles("admin")
   @Post("admin/organiser-plans")
-  createPlan(
-    @Body(zodPipe(planSchema)) body: z.infer<typeof planSchema>,
-  ) {
+  createPlan(@Body(zodPipe(planSchema)) body: z.infer<typeof planSchema>) {
     return this.organisations.createPlan({
       code: body.code,
       name: body.name,
-      interval: body.interval as OrganiserPlanInterval,
+      interval: body.interval,
       priceMinor: BigInt(body.priceMinor),
       durationDays: body.durationDays,
       postQuota: body.postQuota,
@@ -353,12 +350,8 @@ export class OrganisationsController {
       ...(body.durationDays !== undefined
         ? { durationDays: body.durationDays }
         : {}),
-      ...(body.postQuota !== undefined
-        ? { postQuota: body.postQuota }
-        : {}),
-      ...(body.features !== undefined
-        ? { features: body.features }
-        : {}),
+      ...(body.postQuota !== undefined ? { postQuota: body.postQuota } : {}),
+      ...(body.features !== undefined ? { features: body.features } : {}),
       ...(body.recommended !== undefined
         ? { recommended: body.recommended }
         : {}),
@@ -398,6 +391,16 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("subscriptions:activate")
+  @Get("admin/organiser-subscriptions")
+  listAdminSubscriptions(
+    @Query(zodPipe(pageSchema)) query: z.infer<typeof pageSchema>,
+  ) {
+    return this.organisations.listAdminSubscriptions(query);
+  }
+
+  @Roles("admin")
+  @ConsoleAccess("subscriptions:activate")
   @Post("admin/organiser-subscriptions/:id/activate")
   activateSubscription(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -417,7 +420,7 @@ export class OrganisationsController {
   ) {
     return this.organisations.createPromotion(requireUser(user).userId, {
       eventId: body.eventId,
-      placement: body.placement as PromotionPlacement,
+      placement: body.placement,
       durationDays: body.durationDays,
       priceMinor:
         body.priceMinor === undefined ? undefined : BigInt(body.priceMinor),
@@ -434,7 +437,7 @@ export class OrganisationsController {
     return this.organisations.listPromotions(requireUser(user).userId, {
       page: query.page,
       limit: query.limit,
-      status: query.status as PromotionStatus | undefined,
+      status: query.status,
     });
   }
 
@@ -451,6 +454,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("promotions:manage")
   @Get("admin/promotions")
   listAllPromotions(
     @Query(zodPipe(promotionListSchema))
@@ -459,11 +463,12 @@ export class OrganisationsController {
     return this.organisations.listAllPromotions({
       page: query.page,
       limit: query.limit,
-      status: query.status as PromotionStatus | undefined,
+      status: query.status,
     });
   }
 
   @Roles("admin")
+  @ConsoleAccess("promotions:manage")
   @Patch("admin/promotions/:id")
   reviewPromotion(
     @CurrentUser() user: AuthenticatedUser | undefined,
@@ -479,6 +484,7 @@ export class OrganisationsController {
   }
 
   @Roles("admin")
+  @ConsoleAccess("promotions:manage")
   @Post("admin/promotions/:id/activate")
   activatePromotion(
     @Param(zodPipe(idParamSchema)) params: z.infer<typeof idParamSchema>,

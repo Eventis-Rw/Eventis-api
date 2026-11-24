@@ -1,0 +1,46 @@
+VPS deployment — Ubuntu + Docker Compose
+
+The API image bundles the shared Eventis contracts and config packages instead of relying on globally registered Bun links. Build the shared contracts first. Install API dependencies to generate its currently ignored bun.lock.
+
+Create a release bundle from your computer:
+  python3 scripts/package-vps.py --output /tmp/eventis-release
+
+Upload /tmp/eventis-release/app.tar.gz to your server and extract it under ~/eventis.
+Copy docker/vps/compose.yaml and seed-initial.cjs to ~/eventis.
+
+Build on the server:
+  cd ~/eventis/app
+  sudo docker build -f Dockerfile.vps -t eventis-api:vps-initial .
+
+Private configuration (chmod 600):
+  ~/eventis/compose.env: DB_PASSWORD and STORAGE_PASSWORD, both strong generated values.
+  ~/eventis/api.env: backend settings from .env.example. DATABASE_URL uses db:5432, REDIS_URL redis:6379, STORAGE_ENDPOINT http://minio:9000, STORAGE_BUCKET eventis-private, STORAGE_ACCESS_KEY_ID eventis, STORAGE_SECRET_ACCESS_KEY equals STORAGE_PASSWORD. Use new JWT and ticket-signing secrets.
+  NODE_ENV=production
+  PAYMENT_PROVIDER=manual disables automated collection and webhooks; receipt review remains available.
+  EMAIL_PROVIDER=disabled explicitly rejects email delivery. To enable Brevo notifications set EMAIL_PROVIDER=brevo, BREVO_API_KEY and BREVO_SENDER_EMAIL. Email sign-in additionally requires AUTH_EMAIL_FROM.
+  Configure real SMS/Cloudinary credentials privately. Keep both FINDLOVE auto-approval flags false.
+
+Start dependencies and apply migrations:
+  cd ~/eventis
+  sudo docker compose --env-file compose.env up -d db redis minio storage-init
+  sudo docker compose --env-file compose.env run --rm --no-deps api node node_modules/prisma/build/index.js migrate deploy
+  sudo docker compose --env-file compose.env run --rm --no-deps -v /home/ubuntu/eventis/seed-initial.cjs:/app/seed-initial.cjs:ro api node seed-initial.cjs
+  sudo docker compose --env-file compose.env up -d api worker
+  curl -f http://127.0.0.1/readyz
+
+Only HTTP port 80 is exposed. Database, Redis and object storage stay on the Docker network. Provider NAT must map an external port to VPS port 80; SSH port mapping is separate. Configure HTTPS before distributing a credential-bearing mobile build. Adjust compose API port binding when adding a reverse proxy.
+
+Operations:
+  sudo docker compose --env-file compose.env ps
+  sudo docker compose --env-file compose.env logs --tail=100 api worker
+  sudo docker compose --env-file compose.env exec -T db pg_dump -U eventis eventis > backup.sql
+
+Back up database and upload volumes off the VPS. Do not run docker compose down -v against this deployment. Initial catalog seed creates no users, sample events or payment recipient details. Configure actual organiser plans/payment methods and administrator access separately.
+
+Administrator bootstrap (after the admin-email-password migration):
+  Set ADMIN_SEED_EMAIL and ADMIN_SEED_PASSWORD privately in ~/eventis/api.env.
+  cd ~/eventis
+  sudo docker compose --env-file compose.env run --rm --no-deps api bun run db:seed:admin
+  Sign in to the real admin console using that email and password; no phone/PIN is needed.
+  Ordinary reruns are idempotent. Password changes require ADMIN_SEED_ROTATE_PASSWORD=true.
+  Do not run the general demo data seed to create an administrator.

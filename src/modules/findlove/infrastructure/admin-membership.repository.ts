@@ -16,6 +16,7 @@ import {
   type Demo,
   type Permissions,
   type Plan,
+  type Payment,
   type Member,
   type Command,
 } from "../domain/admin-membership.js";
@@ -66,11 +67,22 @@ export class AdminMembershipRepository {
     const plans = await tx.installmentPlan.findMany({
       orderBy: [{ accountType: "asc" }, { durationDays: "asc" }],
     });
-    const profiles = await tx.loveProfile.findMany({
-      include: { user: true },
+    const manualPayments = await tx.manualPaymentSubmission.findMany({
+      where: { platform: "FINDLOVE" },
+      orderBy: { createdAt: "desc" },
+    });
+    const applicants = await tx.user.findMany({
+      where: {
+        OR: [
+          { loveProfile: { isNot: null } },
+          { ageVerifications: { some: {} } },
+          { id: { in: manualPayments.map((payment) => payment.userId) } },
+        ],
+      },
+      include: { loveProfile: true },
       orderBy: { createdAt: "asc" },
     });
-    const ids = profiles.map((p) => p.userId);
+    const ids = applicants.map((user) => user.id);
     const verifications = await tx.ageVerification.findMany({
       where: { userId: { in: ids } },
       orderBy: { submittedAt: "desc" },
@@ -111,24 +123,33 @@ export class AdminMembershipRepository {
       version: 1,
       plans: plans.map(planValue),
       permissions: settings.permissions as unknown as Permissions,
-      members: profiles.map((profile) => {
-        const user = profile.user,
+      members: applicants.map((user) => {
+        const profile = user.loveProfile,
           verification = verifications.find((v) => v.userId === user.id);
         const sub =
           subscriptions.find((s) => s.userId === user.id && !s.revokedAt) ??
           subscriptions.find((s) => s.userId === user.id);
         const plan = plans.find((p) => p.id === sub?.installmentPlanId);
         const member: Member = {
+          ...(verification ? { verificationId: verification.id } : {}),
+          hasDocumentBack: !!verification?.backKey,
           id: user.id,
           name:
             user.displayName ??
             ([user.firstName, user.lastName].filter(Boolean).join(" ") ||
-              profile.username),
-          username: profile.username,
-          country: profile.country,
-          dob: (verification?.dateOfBirth ?? profile.dateOfBirth)
-            .toISOString()
-            .slice(0, 10),
+              profile?.username ||
+              user.phone ||
+              "New applicant"),
+          username: profile?.username ?? user.username ?? "Profile not created",
+          country: profile?.country ?? "",
+          dob:
+            (
+              verification?.dateOfBirth ??
+              profile?.dateOfBirth ??
+              user.dateOfBirth
+            )
+              ?.toISOString()
+              .slice(0, 10) ?? "",
           account:
             user.adminAccountStatus === "banned"
               ? "banned"
@@ -164,39 +185,92 @@ export class AdminMembershipRepository {
           };
         return member;
       }),
-      payments: payments.map((payment) => {
-        const native = plans.find((p) => p.id === payment.installmentPlanId)!;
-        const quoted = payment.planSnapshot as unknown as {
-          plan?: Plan;
-          permissions?: Permissions;
-        } | null;
-        const plan = quoted?.plan ?? {
-          ...planValue(native),
-          price: amount(payment.amountMinor),
-        };
-        return {
-          id: payment.id,
-          memberId: payment.userId,
-          plan,
-          permissions: quoted?.permissions ?? defaultPermissions(),
-          amount: amount(payment.amountMinor),
-          method:
-            payment.paymentMethod === "MTN_MOMO" ? "MTN MoMo" : "Airtel Money",
-          status:
-            payment.status === "SUCCEEDED"
-              ? "success"
-              : [
-                    "CREATED",
-                    "PROVIDER_REQUESTED",
-                    "AWAITING_USER",
-                    "UNKNOWN",
-                    "RECONCILING",
-                  ].includes(payment.status)
-                ? "pending"
-                : "failed",
-          createdAt: payment.createdAt.toISOString(),
-        };
-      }),
+      payments: [
+        ...payments.map<Payment>((payment) => {
+          const native = plans.find((p) => p.id === payment.installmentPlanId)!;
+          const quoted = payment.planSnapshot as unknown as {
+            plan?: Plan;
+            permissions?: Permissions;
+          } | null;
+          const plan = quoted?.plan ?? {
+            ...planValue(native),
+            price: amount(payment.amountMinor),
+          };
+          return {
+            id: payment.id,
+            memberId: payment.userId,
+            plan,
+            permissions: quoted?.permissions ?? defaultPermissions(),
+            amount: amount(payment.amountMinor),
+            method:
+              payment.paymentMethod === "MTN_MOMO"
+                ? "MTN MoMo"
+                : "Airtel Money",
+            status:
+              payment.status === "SUCCEEDED"
+                ? "success"
+                : [
+                      "CREATED",
+                      "PROVIDER_REQUESTED",
+                      "AWAITING_USER",
+                      "UNKNOWN",
+                      "RECONCILING",
+                    ].includes(payment.status)
+                  ? "pending"
+                  : "failed",
+            createdAt: payment.createdAt.toISOString(),
+          };
+        }),
+        ...manualPayments.map((payment) => {
+          const snapshot = payment.planSnapshot as {
+            accountType: string;
+            interval: string;
+            durationDays: number;
+          };
+          const tier =
+            snapshot.accountType === "PRIVATE"
+              ? ("private" as const)
+              : ("public" as const);
+          const period =
+            snapshot.interval === "WEEKLY"
+              ? ("week" as const)
+              : snapshot.interval === "YEARLY"
+                ? ("year" as const)
+                : ("month" as const);
+          return {
+            id: payment.id,
+            reference: payment.reference,
+            source: "manual" as const,
+            memberId: payment.userId,
+            plan: {
+              id: `findlove_${tier}_${period}`,
+              tier,
+              period,
+              days: snapshot.durationDays,
+              price: amount(payment.amountMinor),
+              active: true,
+            },
+            permissions: defaultPermissions(),
+            amount: amount(payment.amountMinor),
+            method:
+              (payment.paymentMethodSnapshot as { provider: string })
+                .provider === "MTN_MOMO"
+                ? ("MTN MoMo" as const)
+                : ("Airtel Money" as const),
+            status:
+              payment.status === "APPROVED"
+                ? ("success" as const)
+                : payment.status === "REJECTED"
+                  ? ("failed" as const)
+                  : ("pending" as const),
+            // Received-payment reports use the review date, not the earlier upload date.
+            createdAt: (payment.status === "APPROVED"
+              ? (payment.reviewedAt ?? payment.createdAt)
+              : payment.createdAt
+            ).toISOString(),
+          };
+        }),
+      ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       reports: reports.map((r) => ({
         id: r.id,
         memberId: r.reportedUserId,
@@ -302,7 +376,7 @@ export class AdminMembershipRepository {
             await tx.findLoveAdminSettings.update({
               where: { id: "global" },
               data: {
-                permissions: JSON.parse(JSON.stringify(next.permissions)),
+                permissions: next.permissions,
               },
             });
           if (command.type === "checkout") {
@@ -360,12 +434,7 @@ export class AdminMembershipRepository {
                       : "FAILED",
                 expiresAt: new Date(now.getTime() + 30 * 86400000),
                 paidAt: payment.status === "success" ? now : null,
-                planSnapshot: JSON.parse(
-                  JSON.stringify({
-                    plan: payment.plan,
-                    permissions: payment.permissions,
-                  }),
-                ),
+                planSnapshot: { plan: { ...payment.plan }, permissions: payment.permissions },
               },
             });
           }
@@ -413,14 +482,25 @@ export class AdminMembershipRepository {
               throw AppError.validation({
                 account: ["An administrator cannot restrict their own account"],
               });
-            await tx.user.update({
-              where: { id: modifiedMember.id },
+            const actor = await tx.user.findUnique({
+              where: { id: actorId },
+              select: { consoleRoleId: true },
+            });
+            const { count } = await tx.user.updateMany({
+              where: {
+                id: modifiedMember.id,
+                ...(actor?.consoleRoleId ? { role: { not: "ADMIN" } } : {}),
+              },
               data: {
                 status:
                   modifiedMember.account === "active" ? "ACTIVE" : "INACTIVE",
                 adminAccountStatus: modifiedMember.account,
               },
             });
+            if (!count)
+              throw AppError.forbidden(
+                "Manage administrator accounts through the Eventis admin console.",
+              );
             if (
               (command.type === "member" &&
                 ["grant", "extend", "revoke"].includes(command.action)) ||
@@ -455,9 +535,7 @@ export class AdminMembershipRepository {
                 startsAt: new Date(membership.startsAt),
                 expiresAt: new Date(membership.expiresAt),
                 priceMinor: BigInt(membership.price),
-                permissionsSnapshot: JSON.parse(
-                  JSON.stringify(membership.permissions),
-                ),
+                permissionsSnapshot: membership.permissions,
                 revokedAt: membership.status === "revoked" ? now : null,
               };
               if (

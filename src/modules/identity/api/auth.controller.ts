@@ -9,8 +9,10 @@ import {
   Get,
   HttpCode,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
+import type { FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
@@ -21,6 +23,7 @@ import {
   type RefreshRequest,
 } from "../../../common/contracts/auth.js";
 import { zodPipe } from "../../../common/pipes/zod-validation.pipe.js";
+import { AdminLoginService } from "../application/admin-login.service.js";
 import { AlternativeAuthService } from "../application/alternative-auth.service.js";
 import { GetMeService } from "../application/get-me.service.js";
 import { LoginService } from "../application/login.service.js";
@@ -61,6 +64,14 @@ const loginRequest = z.object({
   phone,
   pin,
 });
+const adminLoginRequest = z.object({
+  email: z
+    .email()
+    .trim()
+    .max(255)
+    .transform((value) => value.toLowerCase()),
+  password: z.string().min(1).max(256),
+});
 const emailRequest = z.object({
   email: z
     .email()
@@ -98,7 +109,17 @@ export class AuthController {
     private readonly getMe: GetMeService,
     private readonly loginService: LoginService,
     private readonly alternativeAuth: AlternativeAuthService,
+    private readonly adminLoginService: AdminLoginService,
   ) {}
+
+  @Post("admin/login")
+  @HttpCode(200)
+  async adminLogin(
+    @Body(zodPipe(adminLoginRequest)) body: z.infer<typeof adminLoginRequest>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.adminLoginService.execute(body, request.ip);
+  }
 
   @Post("email/send-code")
   async sendEmailCode(
