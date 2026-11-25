@@ -388,6 +388,8 @@ model EventRegistration {
 
 /// Organizer statuses are visible for 24 hours and may link to an event.
 model Status {
+  organisationId String?      @map("organisation_id") @db.Uuid
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId     String       @map("user_id") @db.Uuid
   eventId    String?      @map("event_id") @db.Uuid
@@ -1039,6 +1041,7 @@ model Organisation {
   owner                User                  @relation("OrganisationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members              OrganisationMember[]
   events               Event[]
+  statuses             Status[]
   savedBy              SavedOrganiser[]
   businessVerification BusinessVerification?
   activeForUsers       User[]                @relation("ActiveOrganisation")

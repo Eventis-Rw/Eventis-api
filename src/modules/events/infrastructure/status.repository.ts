@@ -3,7 +3,11 @@ import type { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
-const withOwnerAndViews = { user: true, _count: { select: { views: true } } } satisfies Prisma.StatusInclude;
+const withOwnerAndViews = {
+  user: { select: { organizationName: true, firstName: true, lastName: true, displayName: true, username: true, avatarUrl: true } },
+  organisation: { select: { id: true, name: true, logoKey: true } },
+  _count: { select: { views: true } },
+} satisfies Prisma.StatusInclude;
 export type StatusRecord = Prisma.StatusGetPayload<{ include: typeof withOwnerAndViews }>;
 
 const withViewer = { viewer: true } satisfies Prisma.StatusViewInclude;
@@ -17,7 +21,20 @@ export class StatusRepository {
     return Boolean(await this.prisma.event.findFirst({ where: { eventId, posterId: userId, status: "published" }, select: { eventId: true } }));
   }
 
-  create(input: { userId: string; eventId: string | null; mediaUrl: string | null; mediaType: string; caption: string | null; fit: string; background: string; overlays: unknown; createdAt: Date; expiresAt: Date }): Promise<StatusRecord> {
+  async publishingOrganisation(userId: string, requestedId?: string): Promise<string | null> {
+    if (requestedId) {
+      const org = await this.prisma.organisation.findFirst({ where: { id: requestedId, ownerId: userId, deletedAt: null }, select: { id: true } });
+      return org?.id ?? null;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { activeOrganisationId: true, ownedOrganisations: { where: { deletedAt: null }, select: { id: true } } },
+    });
+    const owned = user?.ownedOrganisations ?? [];
+    return owned.find(org => org.id === user?.activeOrganisationId)?.id ?? (owned.length === 1 ? owned[0]!.id : null);
+  }
+
+  create(input: { organisationId: string | null; userId: string; eventId: string | null; mediaUrl: string | null; mediaType: string; caption: string | null; fit: string; background: string; overlays: unknown; createdAt: Date; expiresAt: Date }): Promise<StatusRecord> {
     return this.prisma.status.create({ data: { ...input, overlays: input.overlays as Prisma.InputJsonValue }, include: withOwnerAndViews });
   }
 

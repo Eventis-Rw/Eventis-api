@@ -13,6 +13,7 @@ const overlaySchema = z.object({
 
 export const createStatusSchema = z
   .object({
+    organisation_id: z.string().uuid().optional(),
     event_id: z.string().uuid().optional(),
     media_url: z.string().url().optional(),
     media_type: z.enum(["image", "video", "text"]),

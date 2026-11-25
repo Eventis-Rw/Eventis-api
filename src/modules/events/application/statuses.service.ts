@@ -6,6 +6,7 @@ import { StorageService } from "../../../infrastructure/storage/storage.service.
 import { StatusRepository, type StatusRecord } from "../infrastructure/status.repository.js";
 
 export interface CreateStatusInput {
+  organisationId?: string | undefined;
   eventId?: string | undefined;
   mediaUrl?: string | undefined;
   mediaType: "image" | "video" | "text";
@@ -44,12 +45,16 @@ export class StatusesService {
       throw AppError.validation({ media_type: ["Choose media_type image for an image file"] });
     }
 
+    const organisationId = await this.statuses.publishingOrganisation(userId, input.organisationId);
+    if (input.organisationId && !organisationId) {
+      throw AppError.validation({ organisation_id: ["Choose an organisation you own"] });
+    }
     let uploadedMediaUrl: string | undefined;
     try {
       uploadedMediaUrl = input.mediaFile ? await this.uploadMedia(userId, input.mediaFile) : undefined;
       const now = this.clock.now();
       const row = await this.statuses.create({
-        userId, eventId: input.eventId ?? null, mediaUrl: uploadedMediaUrl ?? input.mediaUrl ?? null,
+        userId, organisationId, eventId: input.eventId ?? null, mediaUrl: uploadedMediaUrl ?? input.mediaUrl ?? null,
         mediaType: input.mediaType, caption: input.caption ?? null, fit: input.fit,
         background: input.background, overlays: input.overlays,
         createdAt: now, expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
@@ -109,14 +114,15 @@ export class StatusesService {
 
   private toResponse(row: StatusRecord) {
     return {
+      organisation_id: row.organisation?.id ?? null,
       id: row.id, user_id: row.userId, event_id: row.eventId, media_url: row.mediaUrl,
       media_type: row.mediaType, caption: row.caption, fit: row.fit, background: row.background,
       overlays: row.overlays, created_at: row.createdAt.toISOString(), expires_at: row.expiresAt.toISOString(),
       views_count: row._count.views,
       owner: {
         id: row.userId,
-        name: displayNameFor(row.user, "Event organiser"),
-        avatar_url: row.user.avatarUrl,
+        name: row.organisation?.name ?? displayNameFor(row.user, "Event organiser"),
+        avatar_url: row.organisation ? row.organisation.logoKey : row.user.avatarUrl,
       },
     };
   }

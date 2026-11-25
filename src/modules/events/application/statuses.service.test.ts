@@ -1,3 +1,5 @@
+import { rejects } from "node:assert/strict";
+
 import { describe, expect, it, mock } from "bun:test";
 
 import { StatusesService } from "./statuses.service.js";
@@ -19,6 +21,7 @@ describe("StatusesService.create", () => {
       Promise.resolve({
         ...input,
         id: "22222222-2222-2222-2222-222222222222",
+        organisation: { id: "org-1", name: "Kigali Universe", logoKey: "https://cdn.example/org.jpg" },
         user: {
           organizationName: "My Events",
           firstName: null,
@@ -29,6 +32,7 @@ describe("StatusesService.create", () => {
       }),
     );
     const repository = {
+      publishingOrganisation: mock(() => Promise.resolve("org-1")),
       ownsPublishedEvent: mock(() => Promise.resolve(true)),
       create,
     };
@@ -55,6 +59,7 @@ describe("StatusesService.create", () => {
     expect(uploadStatusMedia).toHaveBeenCalledWith(ownerId, file);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
+        organisationId: "org-1",
         userId: ownerId,
         mediaUrl: "https://cdn.example/status.jpg",
         caption: "Tonight ❤️",
@@ -63,8 +68,21 @@ describe("StatusesService.create", () => {
       }),
     );
     expect(response.user_id).toBe(ownerId);
+    expect(response.owner).toEqual({ id: ownerId, name: "Kigali Universe", avatar_url: "https://cdn.example/org.jpg" });
     expect(response.caption).toBe("Tonight ❤️");
     expect(response.expires_at).toBe("2026-10-27T12:00:00.000Z");
+  });
+  it("rejects an organisation the publisher does not own before uploading media", async () => {
+    const repository = { publishingOrganisation: mock(() => Promise.resolve(null)), create: mock() };
+    const storage = { uploadStatusMedia: mock() };
+    const service = new StatusesService(repository as never, storage as never, { now: () => now } as never);
+    await rejects(service.create(ownerId, {
+      organisationId: "another-organisation", mediaType: "image", fit: "cover", background: "#000", overlays: [],
+      mediaFile: { filename: "story.jpg", mimetype: "image/jpeg", data: Buffer.from("image") },
+    }));
+    expect(repository.publishingOrganisation).toHaveBeenCalledWith(ownerId, "another-organisation");
+    expect(storage.uploadStatusMedia).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
   });
 });
 
@@ -87,13 +105,13 @@ describe("StatusesService.recordView", () => {
       { now: () => now } as never,
     );
 
-    await expect(service.recordView(statusId, viewerId)).resolves.toEqual({
+    expect(await service.recordView(statusId, viewerId)).toEqual({
       status_id: statusId,
       views_count: 1,
     });
     expect(recordView).toHaveBeenCalledWith(statusId, viewerId, now);
 
-    await expect(service.recordView(statusId, ownerId)).resolves.toEqual({
+    expect(await service.recordView(statusId, ownerId)).toEqual({
       status_id: statusId,
       views_count: 2,
     });
@@ -132,9 +150,7 @@ describe("StatusesService.viewers", () => {
       { now: () => now } as never,
     );
 
-    await expect(
-      service.viewers(statusId, "44444444-4444-4444-4444-444444444444"),
-    ).rejects.toThrow("not found");
+    await rejects(service.viewers(statusId, "44444444-4444-4444-4444-444444444444"), /not found/i);
 
     const response = await service.viewers(statusId, ownerId);
 

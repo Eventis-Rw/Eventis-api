@@ -157,26 +157,25 @@ export class ChatRepository {
       this.prisma.conversation.count({ where }),
     ]);
 
-    const items: ConversationListItem[] = [];
-    for (const row of rows) {
-      const conversation = toConversation(row);
-      const mine = conversation.participants.find(
-        (p) => p.userId === input.userId,
-      );
-      const unreadCount = await this.prisma.message.count({
-        where: {
-          conversationId: row.id,
-          deletedAt: null,
-          senderId: { not: input.userId },
-          ...(mine?.lastReadAt ? { createdAt: { gt: mine.lastReadAt } } : {}),
-        },
-      });
-      items.push({
-        ...conversation,
-        lastMessage: row.messages[0] ? toMessage(row.messages[0]) : null,
-        unreadCount,
-      });
-    }
+    if (!rows.length) return { items: [], total };
+    const unreadCounts = await this.prisma.message.groupBy({
+      by: ["conversationId"],
+      where: {
+        deletedAt: null,
+        senderId: { not: input.userId },
+        OR: rows.map(row => {
+          const lastReadAt = row.participants.find(p => p.userId === input.userId)?.lastReadAt;
+          return { conversationId: row.id, ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}) };
+        }),
+      },
+      _count: { _all: true },
+    });
+    const unreadByConversation = new Map(unreadCounts.map(row => [row.conversationId, row._count._all]));
+    const items = rows.map(row => ({
+      ...toConversation(row),
+      lastMessage: row.messages[0] ? toMessage(row.messages[0]) : null,
+      unreadCount: unreadByConversation.get(row.id) ?? 0,
+    }));
     return { items, total };
   }
 
