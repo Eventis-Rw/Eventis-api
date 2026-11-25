@@ -45,6 +45,23 @@ const conversationInclude = {
 export class ChatRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findDirectEventisPeers(userId: string): Promise<string[]> {
+    const peers = await this.prisma.conversationParticipant.findMany({
+      where: {
+        userId: { not: userId },
+        hiddenAt: null,
+        conversation: { type: "DIRECT", service: "EVENTIS", participants: { some: { userId } } },
+        user: {
+          blocksCreated: { none: { blockedId: userId } },
+          blocksReceived: { none: { blockerId: userId } },
+        },
+      },
+      select: { userId: true },
+      distinct: ["userId"],
+    });
+    return peers.map(peer => peer.userId);
+  }
+
   async findConversationById(id: string): Promise<ConversationRecord | null> {
     const row = await this.prisma.conversation.findUnique({
       where: { id },

@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { Subject } from "rxjs";
 import { z } from "zod";
 
 import { Clock } from "../../../common/clock.js";
@@ -99,6 +100,9 @@ type EditableUserProfile = {
 
 @Injectable()
 export class UpdateProfileService {
+  private readonly avatarChanges = new Subject<string>();
+  readonly avatarChanged = this.avatarChanges.asObservable();
+
   constructor(
     private readonly users: UserRepository,
     private readonly storage: StorageService,
@@ -173,6 +177,7 @@ export class UpdateProfileService {
       }
       const user = await this.users.updateProfile(userId, data);
       persistedAvatar = true;
+      if (existingUser.avatarUrl !== user.avatarUrl) this.avatarChanges.next(userId);
       if (newAvatarKey || input.removeAvatar) {
         if (existingUser.avatarUrl) {
           try {
