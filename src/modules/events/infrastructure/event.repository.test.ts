@@ -43,7 +43,7 @@ const sample: Event = {
 describe("event organiser identity", () => {
   it("returns the organisation name on feed, detail and update responses", async () => {
     const row = { ...sample, _count: { savedBy: 0 }, organisation: { name: "Kigali Arts" },
-      poster: { displayName: "Account holder", username: "publisher", firstName: null, lastName: null } };
+      poster: { ownedOrganisations: [] as {name: string; logoKey: string}[], avatarUrl: "https://example.org/member.jpg", displayName: "Account holder", username: "publisher", firstName: null, lastName: null } };
     const db = { event: {
       findMany: () => Promise.resolve([row]), count: () => Promise.resolve(1),
       findUnique: () => Promise.resolve(row), update: () => Promise.resolve(row),
@@ -58,12 +58,16 @@ describe("event organiser identity", () => {
 
   it("uses the publisher name for events without an organisation", async () => {
     const row = { ...sample, _count: { savedBy: 0 }, organisation: null,
-      poster: { displayName: "Jane Doe", username: "jane", firstName: "Jane", lastName: "Doe" } };
+      poster: { ownedOrganisations: [] as {name: string; logoKey: string}[], avatarUrl: "https://example.org/member.jpg", displayName: "Jane Doe", username: "jane", firstName: "Jane", lastName: "Doe" } };
     const repo = new EventRepository({ event: { findUnique: () => Promise.resolve(row) } } as unknown as PrismaService);
     expect(toEventResponse((await repo.findById(sample.eventId))!).organizer_name).toBe("Jane Doe");
     row.poster.displayName = "";
     expect((await repo.findById(sample.eventId))!.organizerName).toBe("jane");
     row.poster.username = "";
     expect((await repo.findById(sample.eventId))!.organizerName).toBe("Jane Doe");
+    row.poster.ownedOrganisations.push({ name: "Kigali Universe", logoKey: "https://example.org/logo.jpg" });
+    const legacy = toEventResponse((await repo.findById(sample.eventId))!);
+    expect(legacy.organizer_name).toBe("Kigali Universe");
+    expect(legacy.organizer_avatar_url).toBe("https://example.org/logo.jpg");
   });
 });

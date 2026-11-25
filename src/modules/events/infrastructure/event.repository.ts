@@ -6,8 +6,8 @@ import type { Event, EventStatus } from "../domain/event.js";
 
 const eventWithSaves = {
   _count: { select: { savedBy: true } },
-  organisation: { select: { name: true } },
-  poster: { select: { displayName: true, username: true, firstName: true, lastName: true } },
+  organisation: { select: { name: true, logoKey: true } },
+  poster: { select: { avatarUrl: true, ownedOrganisations: { take: 2, select: { name: true, logoKey: true } }, displayName: true, username: true, firstName: true, lastName: true } },
 } satisfies Prisma.EventInclude;
 
 type EventWithSaves = Prisma.EventGetPayload<{ include: typeof eventWithSaves }>;
@@ -160,6 +160,8 @@ export class EventRepository {
 }
 
 function toDomain(row: EventWithSaves): Event {
+  const owned = row.poster.ownedOrganisations;
+  const host = row.organisation ?? (owned.length === 1 ? owned[0] : undefined);
   return {
     eventId: row.eventId,
     title: row.title,
@@ -190,7 +192,8 @@ function toDomain(row: EventWithSaves): Event {
     ratingAvg: Number(row.ratingAvg),
     reviewCount: row.reviewCount,
     posterId: row.posterId,
-    organizerName: row.organisation?.name.trim() || row.poster.displayName?.trim() ||
+    organizerAvatarUrl: host?.logoKey && /^https?:\/\//i.test(host.logoKey) ? host.logoKey : row.poster.avatarUrl,
+    organizerName: host?.name.trim() || row.poster.displayName?.trim() ||
       row.poster.username?.trim() || [row.poster.firstName, row.poster.lastName].filter(Boolean).join(" ").trim() || null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
