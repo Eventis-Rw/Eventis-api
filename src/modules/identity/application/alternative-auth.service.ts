@@ -80,6 +80,9 @@ export class AlternativeAuthService {
       const user = await tx.user.findFirst({
         where: { email: { equals: email, mode: "insensitive" } },
       });
+      if (input.purpose === "login" && !user) {
+        throw new AppError(ERROR_CODES.NOT_FOUND, "No account found with this email. Please sign up first.", 404);
+      }
       if (input.purpose === "register" && user) throw emailAlreadyExists();
       const recent = await tx.emailSignInCode.findFirst({
         // Failed sends are consumed below and should be retryable immediately.
@@ -118,7 +121,7 @@ export class AlternativeAuthService {
         },
       });
     });
-    // Login keeps the same response for existing and unknown accounts.
+    // Only an eligible email login or registration sends a code.
     if (challenge.purpose !== "unavailable") {
       let providerStatus: number | undefined;
       try {

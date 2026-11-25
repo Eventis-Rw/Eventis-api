@@ -31,6 +31,7 @@ export interface EventResponse {
   rating_avg: number;
   review_count: number;
   poster_id: string;
+  organizer_avatar_url: string | null;
   organizer_name: string | null;
   created_at: string;
   updated_at: string;
@@ -74,6 +75,7 @@ export function toEventResponse(event: Event, coverUrl?: string | null): EventRe
     rating_avg: event.ratingAvg,
     review_count: event.reviewCount,
     poster_id: event.posterId,
+    organizer_avatar_url: event.organizerAvatarUrl ?? null,
     organizer_name: event.organizerName ?? null,
     created_at: event.createdAt.toISOString(),
     updated_at: event.updatedAt.toISOString(),

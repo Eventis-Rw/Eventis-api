@@ -191,6 +191,20 @@ describe("AlternativeAuthService", () => {
 });
 
 describe("Brevo email OTP delivery", () => {
+  it("directs an unknown login email to registration without creating a challenge or sending email", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch");
+    try {
+      const f = fixture();
+      const initial = { ...f.challenge };
+      await assert.rejects(f.service.sendEmailCode({ email: "new@example.com", purpose: "login" }), {
+        status: 404, message: "No account found with this email. Please sign up first.",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(f.challenge).toEqual(initial);
+      expect(f.getAccount()).toBeNull();
+    } finally { fetchSpy.mockRestore(); }
+  });
+
   it("rejects duplicate registration without sending a code or changing the account", async () => {
     const fetchSpy = spyOn(globalThis, "fetch");
     try {
