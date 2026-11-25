@@ -3,8 +3,8 @@ export function buildOtpEmail(code: string, purpose: "login" | "register") {
   if (!/^\d{6}$/.test(code)) throw new TypeError("OTP must contain six digits");
   const registering = purpose === "register";
   const subject = registering
-    ? "Verify your email with Eventis"
-    : "Your Eventis sign-in code";
+    ? `${code} · Verify your email with Eventis`
+    : `${code} · Your Eventis sign-in code`;
   const title = registering ? "You’re almost in." : "Welcome back.";
   const instruction = registering
     ? "Enter this code in Eventis to verify your email and finish creating your account."
@@ -19,7 +19,7 @@ export function buildOtpEmail(code: string, purpose: "login" | "register") {
   <title>${subject}</title>
 </head>
 <body style="margin:0;padding:0;width:100%;background-color:#f0f4fa;color:#0a1022;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
-  <div style="display:none;font-size:1px;line-height:1px;color:#f0f4fa;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">Your Eventis verification code expires in 5 minutes.</div>
+  <div style="display:none;font-size:1px;line-height:1px;color:#f0f4fa;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${code} is your Eventis verification code. It expires in 5 minutes.</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0f4fa;">
     <tr><td align="center" style="padding:40px 16px;">
       <!--[if mso]><table role="presentation" width="520" align="center"><tr><td><![endif]-->

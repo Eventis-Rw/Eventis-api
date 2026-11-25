@@ -297,7 +297,8 @@ describe("Brevo email OTP delivery", () => {
       expect(otp).toBeDefined();
       expect(body.htmlContent).toContain(otp!);
       expect(body.htmlContent).toContain("You’re almost in.");
-      expect(body.subject).toBe("Verify your email with Eventis");
+      expect(body.subject).toBe(`${otp} · Verify your email with Eventis`);
+      expect(body.htmlContent).toContain(`${otp} is your Eventis verification code.`);
       expect(result.retryAfterSeconds).toBe(60);
       expect(result).not.toHaveProperty("code");
       expect(f.getAccount()).toBeNull();

@@ -4,13 +4,13 @@ import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import type { Event, EventStatus } from "../domain/event.js";
 
-type EventWithSaves = Prisma.EventGetPayload<{
-  include: { _count: { select: { savedBy: true } } };
-}>;
-
 const eventWithSaves = {
   _count: { select: { savedBy: true } },
+  organisation: { select: { name: true } },
+  poster: { select: { displayName: true, username: true, firstName: true, lastName: true } },
 } satisfies Prisma.EventInclude;
+
+type EventWithSaves = Prisma.EventGetPayload<{ include: typeof eventWithSaves }>;
 
 @Injectable()
 export class EventRepository {
@@ -190,6 +190,8 @@ function toDomain(row: EventWithSaves): Event {
     ratingAvg: Number(row.ratingAvg),
     reviewCount: row.reviewCount,
     posterId: row.posterId,
+    organizerName: row.organisation?.name.trim() || row.poster.displayName?.trim() ||
+      row.poster.username?.trim() || [row.poster.firstName, row.poster.lastName].filter(Boolean).join(" ").trim() || null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

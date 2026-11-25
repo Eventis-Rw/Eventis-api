@@ -70,6 +70,7 @@ import { TokenService } from "./infrastructure/token.service.js";
     },
   ],
   exports: [
+    UpdateProfileService,
     RequestOtpService,
     VerifyOtpService,
     RefreshTokenService,

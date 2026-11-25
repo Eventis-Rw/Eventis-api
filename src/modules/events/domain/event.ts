@@ -43,6 +43,7 @@ export interface Event {
   readonly ratingAvg: number;
   readonly reviewCount: number;
   readonly posterId: string;
+  readonly organizerName?: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

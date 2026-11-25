@@ -1,11 +1,12 @@
 import type { Server as HttpServer } from "node:http";
 
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
+import type { Subscription } from "rxjs";
 import { Server, type Socket } from "socket.io";
 import { z } from "zod";
 
 import { AppError } from "../../../common/errors/app-error.js";
-import { VerifyAccessTokenService } from "../../identity/index.js";
+import { UpdateProfileService, VerifyAccessTokenService } from "../../identity/index.js";
 import { ChatService } from "../application/chat.service.js";
 import { PolicyViolationError } from "../domain/chat.js";
 
@@ -35,9 +36,12 @@ export class ChatRealtimeGateway implements OnModuleDestroy {
   private io: Server | null = null;
   private readonly userIdBySocketId = new Map<string, string>();
 
+  private avatarChanges?: Subscription;
+
   constructor(
     private readonly verifyAccessToken: VerifyAccessTokenService,
     private readonly chat: ChatService,
+    private readonly profiles: UpdateProfileService,
   ) {}
 
   attach(server: HttpServer): void {
@@ -65,9 +69,15 @@ export class ChatRealtimeGateway implements OnModuleDestroy {
     io.on("connection", (socket) => this.onConnection(socket));
     this.io = io;
     this.chat.attachRealtimeServer(io);
+    this.avatarChanges = this.profiles.avatarChanged.subscribe(userId => {
+      void this.chat.notifyAvatarChanged(userId).catch(() => {
+        this.logger.warn("Could not notify chat participants of a profile photo update");
+      });
+    });
   }
 
   async close(): Promise<void> {
+    this.avatarChanges?.unsubscribe();
     const io = this.io;
     this.io = null;
     if (!io) return;

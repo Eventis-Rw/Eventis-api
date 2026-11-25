@@ -37,3 +37,15 @@ test("username directory search strips @, paginates, and scopes requests to the 
   expect(rateLimitKey).toBe("user-search:viewer-id");
   expect(searchInput).toEqual({ query: "aline", viewerId: "viewer-id", page: 2, limit: 10 });
 });
+
+test("an avatar change prompts direct peers to refresh their chat profiles", async () => {
+  const chat = { findDirectEventisPeers: async (id: string) => {
+    expect(id).toBe("sender");
+    return ["peer"];
+  } };
+  const delivered: unknown[][] = [];
+  const realtime = { emitToUsers: (...args: unknown[]) => delivered.push(args) };
+  const service = new ChatService(chat as never, {} as never, {} as never, {} as never, {} as never, realtime as never, {} as never);
+  await service.notifyAvatarChanged("sender");
+  expect(delivered).toEqual([[["peer"], "chat:avatar:updated", {}]]);
+});

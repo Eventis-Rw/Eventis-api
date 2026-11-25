@@ -72,6 +72,11 @@ export class ChatService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
+  async notifyAvatarChanged(userId: string): Promise<void> {
+    const peers = await this.chat.findDirectEventisPeers(userId);
+    this.realtime.emitToUsers(peers, "chat:avatar:updated", {});
+  }
+
   attachRealtimeServer(server: Server): void {
     this.realtime.attach(server);
   }
