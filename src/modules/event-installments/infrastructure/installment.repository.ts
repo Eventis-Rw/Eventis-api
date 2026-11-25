@@ -266,6 +266,7 @@ export class EventInstallmentRepository {
   }
 
   async listAgreements(input: {
+    visibleTo?: string;
     page: number;
     limit: number;
     customerId?: string | undefined;
@@ -275,6 +276,7 @@ export class EventInstallmentRepository {
     createdTo?: Date | undefined;
   }): Promise<{ items: EventInstallmentAgreement[]; total: number }> {
     const where: Prisma.EventInstallmentAgreementWhereInput = {
+      ...(input.visibleTo ? { OR: [{ customerId: input.visibleTo }, { event: { posterId: input.visibleTo } }] } : {}),
       ...(input.customerId ? { customerId: input.customerId } : {}),
       ...(input.eventId ? { eventId: input.eventId } : {}),
       ...(input.statuses ? { status: { in: input.statuses } } : {}),
@@ -290,7 +292,7 @@ export class EventInstallmentRepository {
     const [rows, total] = await Promise.all([
       this.prisma.eventInstallmentAgreement.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (input.page - 1) * input.limit,
         take: input.limit,
         include: {

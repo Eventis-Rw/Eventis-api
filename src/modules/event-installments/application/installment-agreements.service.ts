@@ -261,28 +261,11 @@ export class InstallmentAgreementsService {
     if (isAdmin(actor)) {
       return this.installments.listAgreements(input);
     }
-    const scoped: typeof input = {
+    return this.installments.listAgreements({
       ...input,
-      customerId:
-        input.customerId === actor.userId ? input.customerId : undefined,
-      eventId: input.eventId,
-    };
-    const result = await this.installments.listAgreements(scoped);
-    const eventIds = [...new Set(result.items.map((row) => row.eventId))];
-    const owned = new Set<string>();
-    for (const eventId of eventIds) {
-      if (!eventId) continue;
-      const event = await this.installments.findEventById(eventId);
-      if (event && event.posterId === actor.userId) {
-        owned.add(eventId);
-      }
-    }
-    const items = result.items.filter(
-      (row) =>
-        row.customerId === actor.userId ||
-        (row.eventId !== null && owned.has(row.eventId)),
-    );
-    return { items, total: items.length };
+      customerId: input.customerId === actor.userId ? input.customerId : undefined,
+      visibleTo: actor.userId,
+    });
   }
 
   /**

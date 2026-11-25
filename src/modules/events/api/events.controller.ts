@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Header,
   Param,
   Patch,
   Post,
@@ -121,9 +122,11 @@ export class EventsController {
   }
 
   @Get()
-  @Public()
+  @Header("Cache-Control", "private, no-store")
+  @OptionalAuth()
   async list(
     @Query(zodPipe(listEventsDto)) query: ListEventsDto,
+    @CurrentUser() viewer?: AuthenticatedUser,
   ): Promise<EventListResponse> {
     const result = await this.listEvents.execute({
       page: query.page,
@@ -131,6 +134,9 @@ export class EventsController {
       category: query.category,
       search: query.search,
       includeNonPublished: false,
+      activeSince: query.activeSince,
+      excludeCategories: query.excludeCategories,
+      viewerId: viewer?.userId,
     });
 
     return {

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { LoveConnectionStatus, Message, Prisma } from "@prisma/client";
+import { Prisma, type LoveConnectionStatus, type Message } from "@prisma/client";
 
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 
@@ -165,37 +165,39 @@ export class FindLoveChatRepository {
   }
 
   /** The last message and the viewer's unread count for each conversation. */
-  async summaries(
-    conversationIds: string[],
-    viewerId: string,
-  ): Promise<Map<string, { lastMessage: Message | null; unreadCount: number; readAt: Date | null }>> {
-    const result = new Map<string, { lastMessage: Message | null; unreadCount: number; readAt: Date | null }>();
-    if (conversationIds.length === 0) return result;
-    const participants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: { in: conversationIds }, userId: viewerId },
-      select: { conversationId: true, lastReadAt: true },
-    });
-    const readAtById = new Map(participants.map((p) => [p.conversationId, p.lastReadAt]));
-    await Promise.all(
-      conversationIds.map(async (conversationId) => {
-        const readAt = readAtById.get(conversationId) ?? null;
-        const [lastMessage, unreadCount] = await Promise.all([
-          this.prisma.message.findFirst({
-            where: { conversationId, deletedAt: null },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          }),
-          this.prisma.message.count({
-            where: {
-              conversationId,
-              deletedAt: null,
-              senderId: { not: viewerId },
-              ...(readAt ? { createdAt: { gt: readAt } } : {}),
-            },
-          }),
-        ]);
-        result.set(conversationId, { lastMessage, unreadCount, readAt });
-      }),
-    );
+  async summaries(conversationIds: string[], viewerId: string) {
+    type Preview = Pick<Message, "id" | "clientMessageId" | "senderId" | "content" | "createdAt">;
+    type Summary = { messages: Preview[]; unreadCount: number; readAt: Date | null };
+    const result = new Map<string, Summary>();
+    if (!conversationIds.length) return result;
+    // Limit history per conversation inside Postgres. A pending request has at most two messages.
+    const rows = await this.prisma.$queryRaw<Array<{
+      conversationId: string; readAt: Date | null; unreadCount: number;
+      id: string | null; clientMessageId: string | null; senderId: string; content: string | null; createdAt: Date;
+    }>>(Prisma.sql`
+      SELECT p.conversation_id AS "conversationId", p.last_read_at AS "readAt",
+             unread.n AS "unreadCount", m.id, m.client_message_id AS "clientMessageId",
+             m.sender_id AS "senderId", m.content, m.created_at AS "createdAt"
+      FROM conversation_participants p
+      CROSS JOIN LATERAL (
+        SELECT COUNT(*)::int AS n FROM messages
+        WHERE conversation_id = p.conversation_id AND deleted_at IS NULL AND sender_id <> p.user_id
+          AND (p.last_read_at IS NULL OR created_at > p.last_read_at)
+      ) unread
+      LEFT JOIN LATERAL (
+        SELECT id, client_message_id, sender_id, content, created_at FROM messages
+        WHERE conversation_id = p.conversation_id AND deleted_at IS NULL
+        ORDER BY created_at DESC, id DESC LIMIT 2
+      ) m ON true
+      WHERE p.user_id = ${viewerId}::uuid
+        AND p.conversation_id IN (${Prisma.join(conversationIds.map(id => Prisma.sql`${id}::uuid`))})
+      ORDER BY p.conversation_id, m.created_at, m.id
+    `);
+    for (const row of rows) {
+      const summary = result.get(row.conversationId) ?? { messages: [], unreadCount: row.unreadCount, readAt: row.readAt };
+      if (row.id) summary.messages.push({ id: row.id, clientMessageId: row.clientMessageId, senderId: row.senderId, content: row.content, createdAt: row.createdAt });
+      result.set(row.conversationId, summary);
+    }
     return result;
   }
 

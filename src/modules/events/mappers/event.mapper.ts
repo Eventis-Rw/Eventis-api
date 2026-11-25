@@ -28,6 +28,7 @@ export interface EventResponse {
   organisation_id: string | null;
   views_count: number;
   saves_count: number;
+  interactions?: Event["interactions"];
   rating_avg: number;
   review_count: number;
   poster_id: string;
@@ -70,6 +71,7 @@ export function toEventResponse(event: Event, coverUrl?: string | null): EventRe
     instructions: event.instructions,
     tags: event.tags,
     organisation_id: event.organisationId,
+    ...(event.interactions ? { interactions: event.interactions } : {}),
     views_count: event.viewsCount,
     saves_count: event.savesCount,
     rating_avg: event.ratingAvg,

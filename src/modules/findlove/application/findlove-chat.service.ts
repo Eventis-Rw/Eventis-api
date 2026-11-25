@@ -43,20 +43,20 @@ export class FindLoveChatService {
         const summary = connection.conversationId
           ? summaries.get(connection.conversationId)
           : undefined;
+        const lastMessage = summary?.messages.at(-1);
         // Accepted connections always get a row; pending ones only once someone has written.
-        if (connection.status === "PENDING" && !summary?.lastMessage) return null;
+        if (connection.status === "PENDING" && !lastMessage) return null;
         const other = otherProfile(connection, me.id);
         return {
           profileId: other.id,
           connectionId: connection.id,
           connectionStatus: connection.status,
           profile: toLoveProfileResponse(other, this.photoUrl),
-          lastMessage: summary?.lastMessage
-            ? this.presentMessage(summary.lastMessage, userId)
-            : null,
+          lastMessage: lastMessage ? this.presentMessage(lastMessage, userId) : null,
+          ...(connection.status === "PENDING" ? { pendingMessages: summary?.messages.map(message => this.presentMessage(message, userId)) ?? [] } : {}),
           unreadCount: summary?.unreadCount ?? 0,
           readAt: summary?.readAt?.toISOString() ?? null,
-          updatedAt: (summary?.lastMessage?.createdAt ?? connection.updatedAt).toISOString(),
+          updatedAt: (lastMessage?.createdAt ?? connection.updatedAt).toISOString(),
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -149,7 +149,7 @@ export class FindLoveChatService {
     return profile;
   }
 
-  private presentMessage(message: Message, viewerId: string) {
+  private presentMessage(message: Pick<Message, "id" | "clientMessageId" | "senderId" | "content" | "createdAt">, viewerId: string) {
     return {
       id: message.id,
       clientMessageId: message.clientMessageId,
