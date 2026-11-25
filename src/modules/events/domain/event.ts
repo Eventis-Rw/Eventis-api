@@ -38,6 +38,7 @@ export interface Event {
   readonly instructions: string | null;
   readonly tags: string[];
   readonly organisationId: string | null;
+  readonly interactions?: { likeCount: number; commentCount: number; liked: boolean };
   readonly viewsCount: number;
   readonly savesCount: number;
   readonly ratingAvg: number;

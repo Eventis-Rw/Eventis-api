@@ -93,8 +93,8 @@ export class AdminWorkspaceRepository {
       orderBy: { createdAt: "desc" },
       take: 2000,
     });
-    const currency = (id: string) =>
-      agreements.find((a) => a.id === id)!.currency;
+    const agreementCurrencies = new Map(agreements.map(row => [row.id, row.currency]));
+    const paymentCurrencies = new Map(payments.map(row => [row.id, row.currency]));
     return {
       revision: settings.revision,
       state: {
@@ -127,9 +127,9 @@ export class AdminWorkspaceRepository {
           due_date: businessDate(s.dueDate.toISOString()),
           amount: major(
             s.amountDueMinor - s.lateFeeAmountMinor,
-            currency(s.agreementId),
+            agreementCurrencies.get(s.agreementId)!,
           ),
-          fee: major(s.lateFeeAmountMinor, currency(s.agreementId)),
+          fee: major(s.lateFeeAmountMinor, agreementCurrencies.get(s.agreementId)!),
           initial: s.isInitialPayment,
           voided: ["WAIVED", "CANCELLED"].includes(s.status),
         })),
@@ -149,7 +149,7 @@ export class AdminWorkspaceRepository {
           payment_id: r.installmentPaymentId,
           amount: major(
             r.amountMinor,
-            payments.find((p) => p.id === r.installmentPaymentId)!.currency,
+            paymentCurrencies.get(r.installmentPaymentId)!,
           ),
           reason: r.reason,
           created_at: (r.processedAt ?? r.createdAt).toISOString(),
@@ -253,12 +253,10 @@ export class AdminWorkspaceRepository {
               ],
             });
           }
-          const changed = <T extends { id: string }>(rows: T[], old: T[]) =>
-            rows.filter(
-              (row) =>
-                JSON.stringify(old.find((r) => r.id === row.id)) !==
-                JSON.stringify(row),
-            );
+          const changed = <T extends { id: string }>(rows: T[], old: T[]) => {
+            const previous = new Map(old.map(row => [row.id, row]));
+            return rows.filter(row => JSON.stringify(previous.get(row.id)) !== JSON.stringify(row));
+          };
           for (const p of changed(next.plans, before.state.plans)) {
             const data = {
               name: p.name,

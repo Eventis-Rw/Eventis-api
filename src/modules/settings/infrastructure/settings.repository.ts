@@ -136,7 +136,7 @@ export class SettingsRepository {
     take: number;
     unreadOnly: boolean;
     category?: NotificationCategory | undefined;
-  }): Promise<{ items: Notification[]; total: number }> {
+  }): Promise<{ items: Notification[]; total: number; unreadCount: number }> {
     const where: Prisma.NotificationWhereInput = {
       userId: params.userId,
       ...(params.unreadOnly ? { readAt: null } : {}),
@@ -144,7 +144,7 @@ export class SettingsRepository {
       // appears here when asked for by category.
       category: params.category ?? { not: "FINDLOVE" },
     };
-    const [items, total] = await Promise.all([
+    const [items, total, unread] = await Promise.all([
       this.prisma.notification.findMany({
         where,
         orderBy: { createdAt: "desc" },
@@ -152,8 +152,9 @@ export class SettingsRepository {
         take: params.take,
       }),
       this.prisma.notification.count({ where }),
+      params.unreadOnly ? null : this.prisma.notification.count({ where: { ...where, readAt: null } }),
     ]);
-    return { items, total };
+    return { items, total, unreadCount: unread ?? total };
   }
 
   async markNotificationRead(

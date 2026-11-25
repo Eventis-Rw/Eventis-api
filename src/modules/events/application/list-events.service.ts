@@ -4,6 +4,9 @@ import type { EventStatus } from "../domain/event.js";
 import { EventRepository } from "../infrastructure/event.repository.js";
 
 export interface ListEventsInput {
+  activeSince?: string | undefined;
+  excludeCategories?: string[] | undefined;
+  viewerId?: string | undefined;
   page: number;
   limit: number;
   category?: string | undefined;
@@ -31,6 +34,7 @@ export class ListEventsService {
       category: input.category,
       search: input.search,
       status,
+      ...(input.activeSince ? { activeSince: input.activeSince, viewerId: input.viewerId, excludeCategories: input.excludeCategories } : {}),
     });
   }
 

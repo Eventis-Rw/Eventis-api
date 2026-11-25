@@ -68,6 +68,9 @@ export class EventRepository {
   }
 
   async list(params: {
+    activeSince?: string | undefined;
+    excludeCategories?: string[] | undefined;
+    viewerId?: string | undefined;
     page: number;
     limit: number;
     category?: string | undefined;
@@ -79,11 +82,24 @@ export class EventRepository {
       ? { posterId: params.posterId }
       : {};
 
+    if (params.activeSince) {
+      const since = new Date(params.activeSince);
+      const filters: Prisma.EventWhereInput[] = [
+        { OR: [{ startDate: { gte: since } }, { endDate: { gte: since } }] },
+      ];
+      if (params.excludeCategories?.length) {
+        filters.push({ OR: [
+          { category: null },
+          { category: { notIn: params.excludeCategories, mode: "insensitive" } },
+        ] });
+      }
+      where.AND = filters;
+    }
     if (params.status) {
       where.status = params.status;
     }
     if (params.category) {
-      where.category = params.category;
+      where.category = { equals: params.category, mode: "insensitive" };
     }
     if (params.search) {
       where.OR = [
@@ -98,15 +114,26 @@ export class EventRepository {
     const [rows, total] = await Promise.all([
       this.prisma.event.findMany({
         where,
-        orderBy: [{ startDate: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ startDate: "asc" }, { createdAt: "desc" }, { eventId: "asc" }],
         skip,
         take: params.limit,
-        include: eventWithSaves,
+        include: {
+          ...eventWithSaves,
+          ...(params.activeSince ? {
+            _count: { select: { savedBy: true, likes: true, comments: { where: { deletedAt: null } } } },
+            ...(params.viewerId ? { likes: { where: { userId: params.viewerId }, select: { userId: true } } } : {}),
+          } : {}),
+        },
       }),
       this.prisma.event.count({ where }),
     ]);
 
-    return { items: rows.map(toDomain), total };
+    return { items: rows.map(row => ({
+      ...toDomain(row),
+      ...("likes" in row._count ? { interactions: {
+        likeCount: row._count.likes, commentCount: row._count.comments, liked: !!params.viewerId && row.likes.length > 0,
+      } } : {}),
+    })), total };
   }
 
   async update(

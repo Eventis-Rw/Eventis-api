@@ -104,7 +104,7 @@ export class SettingsService {
       category?: NotificationCategory | undefined;
     },
   ) {
-    const { items, total } = await this.repository.listNotifications({
+    const { items, total, unreadCount } = await this.repository.listNotifications({
       userId,
       skip: (input.page - 1) * input.limit,
       take: input.limit,
@@ -113,6 +113,7 @@ export class SettingsService {
     });
     return {
       items: items.map(toNotificationResponse),
+      unreadCount,
       page: input.page,
       limit: input.limit,
       total,
