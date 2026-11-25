@@ -321,7 +321,7 @@ export class ChatService {
     conversationId: string,
     input: { limit: number; beforeId?: string | undefined },
   ) {
-    await this.requireConversation(userId, conversationId);
+    const conversation = await this.requireConversation(userId, conversationId);
     if (input.beforeId) {
       const cursor = await this.chat.findMessageById(input.beforeId);
       if (!cursor || cursor.conversationId !== conversationId) {
@@ -330,9 +330,7 @@ export class ChatService {
         });
       }
     }
-    const participant = (
-      await this.chat.findConversationById(conversationId)
-    )?.participants.find((item) => item.userId === userId);
+    const participant = conversation.participants.find(item => item.userId === userId);
     let after: Date | undefined;
     if (participant?.clearedBeforeMessageId) {
       const cleared = await this.chat.findMessageById(

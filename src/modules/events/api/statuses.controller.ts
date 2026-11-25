@@ -70,6 +70,7 @@ export class StatusesController {
     const { fields, mediaFile } = await resolveCreateStatusBody(req, body);
     const input = zodPipe(createStatusSchema).transform(fields);
     return this.statuses.create(user.userId, {
+      organisationId: input.organisation_id,
       eventId: input.event_id,
       mediaUrl: input.media_url,
       mediaType: input.media_type,
