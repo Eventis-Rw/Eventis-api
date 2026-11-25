@@ -10,6 +10,7 @@ import { toProfileResponse } from "../mappers/auth.mapper.js";
 
 export const updateProfileSchema = z
   .object({
+    removeAvatar: z.literal("true").optional(),
     firstName: z.string().trim().min(2).max(100).optional(),
     lastName: z.string().trim().min(2).max(100).nullable().optional(),
     displayName: z.string().trim().min(2).max(60).nullable().optional(),
@@ -131,6 +132,7 @@ export class UpdateProfileService {
         newAvatarKey = await this.storage.uploadAvatarImage(userId, avatarFile);
         data.avatarUrl = this.storage.getPublicUrl(newAvatarKey);
       }
+      if (input.removeAvatar && !avatarFile) data.avatarUrl = null;
       if (input.accountType !== undefined) data.accountType = input.accountType;
       if (input.organizationName !== undefined)
         data.organizationName = input.organizationName;
@@ -171,7 +173,7 @@ export class UpdateProfileService {
       }
       const user = await this.users.updateProfile(userId, data);
       persistedAvatar = true;
-      if (newAvatarKey) {
+      if (newAvatarKey || input.removeAvatar) {
         if (existingUser.avatarUrl) {
           try {
             await this.storage.deleteFile(existingUser.avatarUrl);
