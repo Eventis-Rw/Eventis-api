@@ -157,6 +157,13 @@ export class AlternativeAuthService {
             502,
           );
         }
+        if (providerStatus === 401) {
+          throw new AppError(
+            ERROR_CODES.INTERNAL_ERROR,
+            "Email delivery was rejected by the provider. The server's IP address may need to be added to Brevo's authorised IPs (Security settings).",
+            502,
+          );
+        }
         throw new AppError(
           ERROR_CODES.INTERNAL_ERROR,
           "Unable to send your email code. Please try again later.",

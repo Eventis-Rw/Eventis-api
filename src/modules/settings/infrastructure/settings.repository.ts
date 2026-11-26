@@ -210,6 +210,16 @@ export class SettingsRepository {
     await this.prisma.pushToken.deleteMany({ where: { userId, token } });
   }
 
+  async findPushTokensForUsers(
+    userIds: string[],
+  ): Promise<Array<{ userId: string; token: string }>> {
+    if (!userIds.length) return [];
+    return this.prisma.pushToken.findMany({
+      where: { userId: { in: userIds } },
+      select: { userId: true, token: true },
+    });
+  }
+
   async findLatestPhoneVerification(
     userId: string,
     purpose: PhoneVerificationPurpose,

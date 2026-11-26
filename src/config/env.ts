@@ -50,6 +50,7 @@ const envSchema = z
     CLOUDINARY_CLOUD_NAME: optionalString,
     CLOUDINARY_API_KEY: optionalString,
     CLOUDINARY_API_SECRET: optionalString,
+    EXPO_ACCESS_TOKEN: optionalString,
     MOBILE_APP_SCHEME: z
       .string()
       .regex(/^[a-z][a-z0-9+.-]*$/i)

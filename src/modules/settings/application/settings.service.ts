@@ -161,6 +161,13 @@ export class SettingsService {
     return { removed: true };
   }
 
+  /** Used by other modules (e.g. chat calls) to push-notify a set of users. */
+  async getPushTokensForUsers(
+    userIds: string[],
+  ): Promise<Array<{ userId: string; token: string }>> {
+    return this.repository.findPushTokensForUsers(userIds);
+  }
+
   async requestPhoneVerification(
     userId: string,
     input: { phone: string; purpose: PhoneVerificationPurpose },

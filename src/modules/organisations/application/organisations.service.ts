@@ -471,6 +471,41 @@ export class OrganisationsService {
     );
   }
 
+  /**
+   * Spends one post credit against the poster's active organiser plan,
+   * throwing if they have none or have none left. Returns the subscription
+   * id to refund against if event creation ends up failing downstream, or
+   * `null` for an unlimited (no post quota) plan, which needs no credit.
+   */
+  async consumeEventPostCredit(
+    userId: string,
+    now: Date,
+  ): Promise<{ subscriptionId: string } | null> {
+    const subscription = await this.organisations.findActivePostableSubscription(
+      userId,
+      now,
+    );
+    if (!subscription) {
+      throw AppError.forbidden(
+        "You need an active organiser plan to publish an event.",
+      );
+    }
+    if (subscription.postsRemaining === null) return null;
+    const consumed = await this.organisations.decrementPostsRemaining(
+      subscription.id,
+    );
+    if (!consumed) {
+      throw AppError.forbidden(
+        "You've used all your posts. Buy more posts to publish another event.",
+      );
+    }
+    return { subscriptionId: subscription.id };
+  }
+
+  async refundEventPostCredit(subscriptionId: string): Promise<void> {
+    await this.organisations.incrementPostsRemaining(subscriptionId);
+  }
+
   async listAdminSubscriptions(input: { page: number; limit: number }) {
     const { items, total } = await this.organisations.listAdminSubscriptions(
       (input.page - 1) * input.limit,

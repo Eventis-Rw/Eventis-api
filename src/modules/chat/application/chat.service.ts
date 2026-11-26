@@ -7,6 +7,7 @@ import type { Server } from "socket.io";
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, type Env } from "../../../config/env.js";
+import { ExpoPushService } from "../../../infrastructure/push/expo-push.service.js";
 import {
   StorageService,
   type UploadedFile,
@@ -15,6 +16,7 @@ import {
   LookupUsersService,
   type PublicUserProfile,
 } from "../../identity/index.js";
+import { SettingsService } from "../../settings/index.js";
 import {
   CALL_RATE,
   CONTACT_SYNC_MAX,
@@ -69,6 +71,8 @@ export class ChatService {
     private readonly clock: Clock,
     private readonly rateLimiter: ChatRateLimiter,
     private readonly realtime: ChatRealtimePublisher,
+    private readonly settings: SettingsService,
+    private readonly push: ExpoPushService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -979,14 +983,52 @@ export class ChatService {
       type,
       status: "RINGING",
     });
+    const recipientIds = conversation.participants
+      .filter((p) => p.userId !== userId)
+      .map((p) => p.userId);
     this.realtime.emitToUsers(
-      conversation.participants
-        .filter((p) => p.userId !== userId)
-        .map((p) => p.userId),
+      recipientIds,
       "chat:call:incoming",
       { ...toCallResponse(call), service: conversation.service },
     );
+    void this.notifyIncomingCall(userId, recipientIds, call);
     return toCallResponse(call);
+  }
+
+  /**
+   * Best-effort push alert for a backgrounded recipient. The live socket
+   * event above is the primary channel while the app is open; this just
+   * reaches a recipient whose app is backgrounded (not killed) and has no
+   * live socket connection right now.
+   */
+  private async notifyIncomingCall(
+    callerId: string,
+    recipientIds: string[],
+    call: { id: string; conversationId: string; type: CallType },
+  ): Promise<void> {
+    if (!recipientIds.length) return;
+    const [[caller], tokens] = await Promise.all([
+      this.users.byIds([callerId]),
+      this.settings.getPushTokensForUsers(recipientIds),
+    ]);
+    if (!tokens.length) return;
+    const callerName =
+      caller?.displayName ||
+      [caller?.firstName, caller?.lastName].filter(Boolean).join(" ") ||
+      "Someone";
+    const kind = call.type === "VIDEO" ? "video call" : "call";
+    await this.push.send(
+      tokens.map((t) => ({
+        to: t.token,
+        title: `Incoming ${kind}`,
+        body: `${callerName} is calling you`,
+        data: {
+          type: "incoming_call",
+          callId: call.id,
+          conversationId: call.conversationId,
+        },
+      })),
+    );
   }
 
   getCallIceServers(userId: string) {
@@ -1010,6 +1052,17 @@ export class ChatService {
       return { iceServers, expiresAt };
     }
     return { iceServers, expiresAt: null };
+  }
+
+  /** Lets a client re-fetch a call's live status, e.g. after resuming from a push-notification tap. */
+  async getCall(userId: string, callId: string) {
+    const call = await this.chat.findCallById(callId);
+    if (!call) throw AppError.notFound("Call");
+    const conversation = await this.requireConversation(
+      userId,
+      call.conversationId,
+    );
+    return { ...toCallResponse(call), service: conversation.service };
   }
 
   async transitionCall(userId: string, callId: string, status: CallStatus) {

@@ -321,9 +321,30 @@ describe("Brevo email OTP delivery", () => {
     }
   });
 
-  it("invalidates the challenge when Brevo rejects delivery", async () => {
+  it("explains Brevo 401 responses as a likely unauthorised-IP rejection", async () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("rejected", { status: 401 }),
+    );
+    try {
+      const f = fixture();
+      await assert.rejects(
+        f.service.sendEmailCode({
+          email: "aline@example.com",
+          purpose: "register",
+          username: "Aline",
+        }),
+        /authorised IPs/,
+      );
+      expect(f.challenge.consumedAt).toEqual(now);
+      expect(f.getSessions()).toBe(0);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("invalidates the challenge and returns a generic failure for other Brevo errors", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("server error", { status: 500 }),
     );
     try {
       const f = fixture();

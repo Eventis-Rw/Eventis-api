@@ -4,6 +4,7 @@ import { AuthGuard } from "../../common/guards/auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { PrismaModule } from "../../infrastructure/database/prisma.module.js";
 import { StorageModule } from "../../infrastructure/storage/storage.module.js";
+import { OrganisationsModule } from "../organisations/index.js";
 import { PlatformModule } from "../platform/index.js";
 
 import { EventsController } from "./api/events.controller.js";
@@ -20,7 +21,7 @@ import { EventRepository } from "./infrastructure/event.repository.js";
 import { StatusRepository } from "./infrastructure/status.repository.js";
 
 @Module({
-  imports: [PlatformModule, StorageModule, PrismaModule],
+  imports: [PlatformModule, StorageModule, PrismaModule, OrganisationsModule],
   controllers: [EventsController, StatusesController],
   providers: [
     AuthGuard,

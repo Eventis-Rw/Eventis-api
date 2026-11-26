@@ -388,6 +388,14 @@ export class ChatController {
     return this.chat.listCalls(userId, query);
   }
 
+  @Get("calls/:id")
+  getCall(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.getCall(userId, id);
+  }
+
   @Get("blocks")
   listBlocks(@CurrentUserId() userId: string) {
     return this.chat.listBlockedUsers(userId);
