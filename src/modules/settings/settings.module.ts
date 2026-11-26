@@ -12,7 +12,6 @@ import { PushDeliveryService } from "./application/push-delivery.service.js";
 import { SettingsService } from "./application/settings.service.js";
 import { SettingsRepository } from "./infrastructure/settings.repository.js";
 
-
 @Module({
   imports: [PrismaModule, IdentityModule, PlatformModule, EmailModule],
   controllers: [SettingsController],

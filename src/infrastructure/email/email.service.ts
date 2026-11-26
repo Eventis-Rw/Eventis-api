@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 
-import { EmailQueue } from "./email-queue.js";
 import { EMAIL_PROVIDER, type EmailProvider, type SendEmailInput } from "./email-provider.js";
+import { EmailQueue } from "./email-queue.js";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -38,7 +38,7 @@ function fixture(
   emailProvider: FakeEmailProvider = new FakeEmailProvider(),
 ) {
   const tokens = new TokenService(env, new FixedClock(now));
-  const emails = new EmailService(emailProvider as never, noopQueue);
+  const emails = new EmailService(emailProvider, noopQueue);
   const challenge = {
     id: "challenge-id",
     email: "aline@example.com",
@@ -205,7 +205,8 @@ describe("email OTP delivery", () => {
     const f = fixture();
     const initial = { ...f.challenge };
     await assert.rejects(f.service.sendEmailCode({ email: "new@example.com", purpose: "login" }), {
-      status: 404, message: "No account found with this email. Please sign up first.",
+      status: 404,
+      message: "No account found with this email. Please sign up first.",
     });
     expect(f.emailProvider.sent).toHaveLength(0);
     expect(f.challenge).toEqual(initial);
@@ -284,7 +285,7 @@ describe("email OTP delivery", () => {
     expect(otp).toBeDefined();
     expect(sent.html).toContain(otp!);
     expect(sent.html).toContain("You’re almost in.");
-    expect(sent.subject).toBe("Verify your email with Eventis");
+    expect(sent.subject).toBe(`${otp} · Verify your email with Eventis`);
     expect(result.retryAfterSeconds).toBe(60);
     expect(result).not.toHaveProperty("code");
     expect(f.getAccount()).toBeNull();

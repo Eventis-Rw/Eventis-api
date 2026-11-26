@@ -104,6 +104,8 @@ const baseRow = {
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
   _count: { savedBy: 0 },
+  organisation: null,
+  poster: { ownedOrganisations: [] as {name: string; logoKey: string}[], avatarUrl: null, displayName: "Sample Poster", username: "sample", firstName: null, lastName: null },
 };
 
 describe("EventRepository.list", () => {

@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+
 import { describe, expect, it } from "bun:test";
 
 import { EmailService } from "./email.service.js";
@@ -27,7 +29,7 @@ describe("EmailService.sendWithRetry", () => {
         return Promise.resolve();
       },
     };
-    const service = new EmailService(provider as never, noopQueue);
+    const service = new EmailService(provider, noopQueue);
 
     await service.sendWithRetry(
       { to: "a@example.com", subject: "Hi", html: "<p>hi</p>" },
@@ -39,14 +41,15 @@ describe("EmailService.sendWithRetry", () => {
 
   it("throws the last error once every attempt has failed", async () => {
     const provider = { send: () => Promise.reject(new Error("down")) };
-    const service = new EmailService(provider as never, noopQueue);
+    const service = new EmailService(provider, noopQueue);
 
-    await expect(
+    await assert.rejects(
       service.sendWithRetry(
         { to: "a@example.com", subject: "Hi", html: "<p>hi</p>" },
         { attempts: 2, delayMs: 1 },
       ),
-    ).rejects.toThrow("down");
+      /down/,
+    );
   });
 });
 

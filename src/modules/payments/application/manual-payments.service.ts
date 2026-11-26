@@ -1,10 +1,11 @@
 import { ERROR_CODES } from "@eventis/contracts";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { EmailService } from "../../../infrastructure/email/email.service.js";
+import type { SendEmailInput } from "../../../infrastructure/email/email-provider.js";
 import { OrganisationsService } from "../../organisations/index.js";
 import {
   type ManualPaymentPlanSnapshot,
@@ -12,6 +13,7 @@ import {
   type ManualPaymentStatus,
   type ManualPaymentSubmission,
 } from "../domain/manual-payment.js";
+import { buildOrganiserApplicationInReviewEmail } from "../emails/organiser-application-emails.js";
 import {
   buildPaymentApprovedEmail,
   buildPaymentRejectedEmail,
@@ -19,6 +21,7 @@ import {
 } from "../emails/payment-emails.js";
 import { ManualPaymentRepository } from "../infrastructure/manual-payment.repository.js";
 import { PaymentRepository } from "../infrastructure/payment.repository.js";
+
 import { OrganiserApplicationsService } from "./organiser-applications.service.js";
 
 /**
@@ -35,6 +38,8 @@ function money(amountMinor: bigint, currency: string): string {
 
 @Injectable()
 export class ManualPaymentsService {
+  private readonly logger = new Logger(ManualPaymentsService.name);
+
   constructor(
     private readonly repo: ManualPaymentRepository,
     private readonly payments: PaymentRepository,
@@ -43,6 +48,19 @@ export class ManualPaymentsService {
     private readonly clock: Clock,
     private readonly applications: OrganiserApplicationsService,
   ) {}
+
+  /**
+   * Sends a notification email immediately (no queue/Redis involved) and
+   * never throws — a flaky email provider must not fail the admin/user
+   * action that triggered it. Retries once before giving up.
+   */
+  private async notify(input: SendEmailInput): Promise<void> {
+    try {
+      await this.emails.sendWithRetry(input, { attempts: 2, delayMs: 500 });
+    } catch (err) {
+      this.logger.error({ err, to: input.to, subject: input.subject }, "Failed to send email");
+    }
+  }
 
   // ---- User: submit & track ------------------------------------------------
 
@@ -166,10 +184,7 @@ export class ManualPaymentsService {
         amountLabel: money(amountMinor, currency),
         reference: submission.reference,
       });
-      void this.emails.sendBestEffort(
-        { to: user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
-        `payment-submitted:${submission.reference}`,
-      );
+      void this.notify({ to: user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
     }
 
     return submission;
@@ -226,8 +241,9 @@ export class ManualPaymentsService {
     verifiedTransactionId?: string,
   ): Promise<ManualPaymentSubmission> {
     const now = this.clock.now();
-    const { submission, resolved, changed } = await this.repo.transaction(
+    const { submission, resolved, changed, appInReview } = await this.repo.transaction(
       async (tx) => {
+        let appInReview = false;
         const submission = await this.repo.findSubmissionById(id, tx);
         if (!submission) throw AppError.notFound("That payment");
         const resolved = await this.repo.resolve(
@@ -241,7 +257,7 @@ export class ManualPaymentsService {
           tx,
         );
         if (!resolved)
-          return { submission, resolved: submission, changed: false };
+          return { submission, resolved: submission, changed: false, appInReview: false };
         if (submission.platform === "FINDLOVE") {
           if (!submission.installmentPlanId)
             throw AppError.validation({
@@ -287,6 +303,7 @@ export class ManualPaymentsService {
           const user = await tx.user.findUniqueOrThrow({ where: { id: submission.userId }, select: { accountType: true } });
           if (user.accountType !== "POSTER") {
             await this.applications.paymentVerified(submission.id, submission.userId, tx);
+            appInReview = true;
           } else await this.organisations.activateFromManualPayment(
             submission.userId,
             submission.organiserPlanId,
@@ -302,7 +319,7 @@ export class ManualPaymentsService {
             },
           );
         }
-        return { submission, resolved, changed: true };
+        return { submission, resolved, changed: true, appInReview };
       },
     ).catch((error: unknown) => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -324,10 +341,12 @@ export class ManualPaymentsService {
         verifiedAtIso: now.toISOString(),
         isOrganiser: submission.platform === "ORGANISER",
       });
-      void this.emails.sendBestEffort(
-        { to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
-        `payment-approved:${resolved.reference}`,
-      );
+      void this.notify({ to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
+    }
+
+    if (appInReview && submission.user.email) {
+      const reviewEmail = buildOrganiserApplicationInReviewEmail();
+      void this.notify({ to: submission.user.email, subject: reviewEmail.subject, html: reviewEmail.htmlContent, text: reviewEmail.textContent });
     }
 
     return resolved;
@@ -367,10 +386,7 @@ export class ManualPaymentsService {
         reference: resolved.reference,
         rejectionReason,
       });
-      void this.emails.sendBestEffort(
-        { to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
-        `payment-rejected:${resolved.reference}`,
-      );
+      void this.notify({ to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
     }
 
     return resolved;

@@ -35,7 +35,7 @@ export function buildOtpEmail(code: string, purpose: "login" | "register") {
 
   const htmlContent = renderEmailLayout({
     subject,
-    preheader: "Your Eventis verification code expires in 5 minutes.",
+    preheader: `${code} is your Eventis verification code. It expires in 5 minutes.`,
     cardInnerHtml,
   });
 

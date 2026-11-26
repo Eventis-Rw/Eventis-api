@@ -4,8 +4,8 @@ import { ENV, type Env } from "../../config/env.js";
 
 import { BrevoEmailProvider } from "./brevo-email.provider.js";
 import { DisabledEmailProvider } from "./disabled-email.provider.js";
-import { EmailQueue } from "./email-queue.js";
 import { EMAIL_PROVIDER, type EmailProvider } from "./email-provider.js";
+import { EmailQueue } from "./email-queue.js";
 import { EmailService } from "./email.service.js";
 import { FakeEmailProvider } from "./fake-email.provider.js";
 

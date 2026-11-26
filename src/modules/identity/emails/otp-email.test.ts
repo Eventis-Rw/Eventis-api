@@ -10,7 +10,7 @@ describe("buildOtpEmail", () => {
 
   it("renders a branded, selectable code block with expiry and security notice", () => {
     const { subject, htmlContent, textContent } = buildOtpEmail("482913", "login");
-    expect(subject).toBe("Your Eventis sign-in code");
+    expect(subject).toBe("482913 · Your Eventis sign-in code");
     expect(htmlContent).toContain("482913");
     expect(htmlContent).toContain("Valid for");
     expect(htmlContent).toContain("5 minutes");
@@ -23,7 +23,7 @@ describe("buildOtpEmail", () => {
 
   it("uses register-specific copy for the register purpose", () => {
     const { subject, htmlContent } = buildOtpEmail("111222", "register");
-    expect(subject).toBe("Verify your email with Eventis");
+    expect(subject).toBe("111222 · Verify your email with Eventis");
     expect(htmlContent).toContain("verify your email");
   });
 });

@@ -45,7 +45,7 @@ test("an avatar change prompts direct peers to refresh their chat profiles", asy
   } };
   const delivered: unknown[][] = [];
   const realtime = { emitToUsers: (...args: unknown[]) => delivered.push(args) };
-  const service = new ChatService(chat as never, {} as never, {} as never, {} as never, {} as never, realtime as never, {} as never);
+  const service = new ChatService(chat as never, {} as never, {} as never, {} as never, {} as never, realtime as never, {} as never, {} as never, {} as never);
   await service.notifyAvatarChanged("sender");
   expect(delivered).toEqual([[["peer"], "chat:avatar:updated", {}]]);
 });

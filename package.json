@@ -11,9 +11,9 @@
     "node": ">=18.18.0"
   },
   "scripts": {
-    "dev:poll": "nodemon --legacy-watch --watch src --watch prisma/schema.prisma --ext ts,json,prisma --exec \"bun run check:runtime && bun run build && node dist/main.js\"",
-    "dev": "nodemon --watch src --watch prisma/schema.prisma --ext ts,json,prisma --exec \"bun run check:runtime && bun run build && node dist/main.js\"",
-    "dev:worker": "bun --watch src/worker.ts",
+    "dev:poll": "nodemon --legacy-watch --delay 2 --watch src --watch prisma/schema.prisma --ext ts,json,prisma --exec \"bun run check:runtime && bun run build && node dist/main.js\"",
+    "dev": "nodemon --delay 2 --watch src --watch prisma/schema.prisma --ext ts,json,prisma --exec \"bun run check:runtime && bun run build && node dist/main.js\"",
+    "dev:worker": "nodemon --delay 2 --watch src --watch prisma/schema.prisma --ext ts,json,prisma --exec \"bun run check:runtime && bun run build && node dist/worker.js\"",
     "build": "bunx --bun prisma generate && tsc -p tsconfig.build.json",
     "check:runtime": "node -e \"const [major, minor] = process.versions.node.split('.').map(Number); if (major < 18 || (major === 18 && minor < 18)) { console.error('Unsupported Node.js ' + process.version + '. Use nvm use 20 (or Node >= 18.18.0) before starting Eventis API.'); process.exit(1); }\"",
     "start": "bun run check:runtime && bun run build && node dist/main.js",
