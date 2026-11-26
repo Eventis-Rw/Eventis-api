@@ -7,6 +7,7 @@ import { AppError } from "../../../common/errors/app-error.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
 import { EmailService } from "../../../infrastructure/email/email.service.js";
 import { OrganisationsService } from "../../organisations/index.js";
+import { buildOrganiserApplicationDecisionEmail } from "../emails/organiser-application-emails.js";
 
 type ApplicationInput = {
   name: string;
@@ -160,13 +161,16 @@ export class OrganiserApplicationsService {
     });
     if (result.changed) {
       const user = await this.prisma.user.findUnique({ where: { id: result.app.userId }, select: { email: true } });
-      if (user?.email) void this.emails.sendBestEffort({
-        to: user.email,
-        subject: decision === "APPROVED" ? "Your organiser application was approved" : "Your organiser application was rejected",
-        html: decision === "APPROVED"
-          ? "<p>Your organiser account was approved. Open Eventis to access your dashboard.</p>"
-          : "<p>Your organiser application was rejected. Open Eventis to see the reason and next steps.</p>",
-      });
+      if (user?.email) {
+        const email = buildOrganiserApplicationDecisionEmail({
+          decision,
+          rejectionReason: decision === "REJECTED" ? rejectionReason ?? null : null,
+        });
+        void this.emails.sendBestEffort(
+          { to: user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
+          `organiser-application-decision:${id}`,
+        );
+      }
     }
     return result.app;
   }

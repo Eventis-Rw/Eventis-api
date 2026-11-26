@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { ENV, type Env } from "../../config/env.js";
+import { EmailModule } from "../../infrastructure/email/email.module.js";
 import { StorageModule } from "../../infrastructure/storage/storage.module.js";
 import { PlatformModule } from "../platform/index.js";
 
@@ -34,7 +35,7 @@ import { SMS_PROVIDER } from "./infrastructure/sms/sms-provider.js";
 import { TokenService } from "./infrastructure/token.service.js";
 
 @Module({
-  imports: [PlatformModule, StorageModule],
+  imports: [PlatformModule, StorageModule, EmailModule],
   controllers: [AuthController, UsersController, AdminUsersController],
   providers: [
     RequestOtpService,

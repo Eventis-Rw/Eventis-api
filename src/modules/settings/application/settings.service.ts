@@ -11,6 +11,7 @@ import type {
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
+import { EmailService } from "../../../infrastructure/email/email.service.js";
 import {
   normalizeRwandaPhone,
   PhoneNormalizationError,
@@ -18,6 +19,7 @@ import {
   TokenService,
   type SmsProvider,
 } from "../../identity/index.js";
+import { buildAccountDeletionCodeEmail } from "../emails/deletion-email.js";
 import { SettingsRepository } from "../infrastructure/settings.repository.js";
 import {
   toNotificationPreferenceResponse,
@@ -43,6 +45,7 @@ export class SettingsService {
     private readonly repository: SettingsRepository,
     private readonly tokens: TokenService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
+    private readonly emails: EmailService,
     private readonly clock: Clock,
   ) {}
 
@@ -294,6 +297,21 @@ export class SettingsService {
           { cause: error },
         );
       }
+    } else {
+      try {
+        const email = buildAccountDeletionCodeEmail(code);
+        await this.emails.sendWithRetry(
+          { to: user.email!, subject: email.subject, html: email.htmlContent, text: email.textContent },
+          { attempts: 2, delayMs: 300 },
+        );
+      } catch (error) {
+        throw new AppError(
+          ERROR_CODES.INTERNAL_ERROR,
+          "Unable to send verification code",
+          502,
+          { cause: error },
+        );
+      }
     }
     return {
       id: row.id,
@@ -302,7 +320,7 @@ export class SettingsService {
       message:
         channel === "SMS"
           ? `A deletion code was sent to ${maskPhone(user.phone!)}`
-          : "A deletion code was requested by email",
+          : `A deletion code was sent to ${maskEmail(user.email!)}`,
     };
   }
 
@@ -361,6 +379,13 @@ function normalizePhone(value: string): string {
 function maskPhone(phone: string): string {
   if (phone.length <= 4) return "****";
   return `${phone.slice(0, 4)}****${phone.slice(-2)}`;
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return "****";
+  const visible = local.slice(0, Math.min(2, local.length));
+  return `${visible}${"*".repeat(Math.max(1, local.length - visible.length))}@${domain}`;
 }
 
 function hashMatches(code: string, hash: string, pepper: string): boolean {

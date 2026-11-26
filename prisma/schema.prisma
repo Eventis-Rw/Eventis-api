@@ -333,6 +333,7 @@ model Event {
   comments              EventComment[]
 
   @@index([status, startDate], map: "events_status_start_idx")
+  @@index([status, createdAt], map: "events_status_created_idx")
   @@index([posterId], map: "events_poster_idx")
   @@index([category], map: "events_category_idx")
   @@index([categoryId], map: "events_category_id_idx")

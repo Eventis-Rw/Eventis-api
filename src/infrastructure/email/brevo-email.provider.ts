@@ -18,7 +18,8 @@ export class BrevoEmailProvider implements EmailProvider {
 
   async send(input: SendEmailInput): Promise<void> {
     const apiKey = this.env.BREVO_API_KEY;
-    const senderEmail = this.env.BREVO_SENDER_EMAIL;
+    const senderEmail = input.fromEmail ?? this.env.BREVO_SENDER_EMAIL;
+    const senderName = input.fromName ?? this.env.BREVO_SENDER_NAME;
     if (!apiKey || !senderEmail) {
       throw new AppError(ERROR_CODES.INTERNAL_ERROR, "Email is not configured", 500, {
         internal: { reason: "missing Brevo credentials" },
@@ -37,7 +38,7 @@ export class BrevoEmailProvider implements EmailProvider {
         body: JSON.stringify({
           sender: {
             email: senderEmail,
-            ...(this.env.BREVO_SENDER_NAME ? { name: this.env.BREVO_SENDER_NAME } : {}),
+            ...(senderName ? { name: senderName } : {}),
           },
           to: [{ email: input.to }],
           subject: input.subject,

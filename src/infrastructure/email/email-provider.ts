@@ -5,6 +5,9 @@ export interface SendEmailInput {
   subject: string;
   html: string;
   text?: string;
+  /** Overrides the configured sender for this send only (e.g. a dedicated auth sender). */
+  fromEmail?: string;
+  fromName?: string;
 }
 
 export interface EmailProvider {

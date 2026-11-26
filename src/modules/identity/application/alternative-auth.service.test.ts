@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 
-import { describe, expect, it, spyOn } from "bun:test";
+import { ERROR_CODES } from "@eventis/contracts";
+import { describe, expect, it } from "bun:test";
 
 import { FixedClock } from "../../../common/clock.js";
+import { AppError } from "../../../common/errors/app-error.js";
 import { loadEnv } from "../../../config/env.js";
+import { EmailService } from "../../../infrastructure/email/email.service.js";
+import { FakeEmailProvider } from "../../../infrastructure/email/fake-email.provider.js";
 import { TokenService } from "../infrastructure/token.service.js";
 
 import { AlternativeAuthService } from "./alternative-auth.service.js";
+
+const noopQueue = { enqueue: () => Promise.resolve() } as never;
 
 const now = new Date("2026-11-20T10:00:00Z");
 const env = loadEnv({
@@ -29,8 +35,10 @@ const env = loadEnv({
 function fixture(
   overrides: Record<string, unknown> = {},
   envOverrides: Partial<typeof env> = {},
+  emailProvider: FakeEmailProvider = new FakeEmailProvider(),
 ) {
   const tokens = new TokenService(env, new FixedClock(now));
+  const emails = new EmailService(emailProvider as never, noopQueue);
   const challenge = {
     id: "challenge-id",
     email: "aline@example.com",
@@ -98,11 +106,13 @@ function fixture(
     users as never,
     tokens,
     new FixedClock(now),
+    emails,
     { ...env, ...envOverrides },
   );
   return {
     service,
     challenge,
+    emailProvider,
     getAccount: () => account,
     setAccount: (value: Record<string, unknown>) => {
       account = value;
@@ -190,49 +200,41 @@ describe("AlternativeAuthService", () => {
   });
 });
 
-describe("Brevo email OTP delivery", () => {
+describe("email OTP delivery", () => {
   it("directs an unknown login email to registration without creating a challenge or sending email", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch");
-    try {
-      const f = fixture();
-      const initial = { ...f.challenge };
-      await assert.rejects(f.service.sendEmailCode({ email: "new@example.com", purpose: "login" }), {
-        status: 404, message: "No account found with this email. Please sign up first.",
-      });
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(f.challenge).toEqual(initial);
-      expect(f.getAccount()).toBeNull();
-    } finally { fetchSpy.mockRestore(); }
+    const f = fixture();
+    const initial = { ...f.challenge };
+    await assert.rejects(f.service.sendEmailCode({ email: "new@example.com", purpose: "login" }), {
+      status: 404, message: "No account found with this email. Please sign up first.",
+    });
+    expect(f.emailProvider.sent).toHaveLength(0);
+    expect(f.challenge).toEqual(initial);
+    expect(f.getAccount()).toBeNull();
   });
 
   it("rejects duplicate registration without sending a code or changing the account", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch");
-    try {
-      const f = fixture();
-      const existing = {
-        id: "existing-user",
-        email: "aline@example.com",
-        role: "CUSTOMER",
-        status: "ACTIVE",
-        emailVerifiedAt: now,
-      };
-      f.setAccount(existing);
-      await assert.rejects(
-        f.service.sendEmailCode({
-          email: " ALINE@Example.com ",
-          purpose: "register",
-          username: "Another name",
-        }),
-        { status: 409 },
-      );
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(f.challenge.purpose).toBe("register");
-      expect(f.challenge.consumedAt).toBeNull();
-      expect(f.getAccount()).toBe(existing);
-      expect(f.getSessions()).toBe(0);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    const f = fixture();
+    const existing = {
+      id: "existing-user",
+      email: "aline@example.com",
+      role: "CUSTOMER",
+      status: "ACTIVE",
+      emailVerifiedAt: now,
+    };
+    f.setAccount(existing);
+    await assert.rejects(
+      f.service.sendEmailCode({
+        email: " ALINE@Example.com ",
+        purpose: "register",
+        username: "Another name",
+      }),
+      { status: 409 },
+    );
+    expect(f.emailProvider.sent).toHaveLength(0);
+    expect(f.challenge.purpose).toBe("register");
+    expect(f.challenge.consumedAt).toBeNull();
+    expect(f.getAccount()).toBe(existing);
+    expect(f.getSessions()).toBe(0);
   });
 
   it("rejects registration if the account was created after the code was sent", async () => {
@@ -250,170 +252,123 @@ describe("Brevo email OTP delivery", () => {
   });
 
   it("still sends a sign-in code for an existing verified email", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("{}", { status: 201 }),
-    );
-    try {
-      const f = fixture();
-      f.setAccount({
-        id: "existing-user",
-        email: "aline@example.com",
-        role: "CUSTOMER",
-        status: "ACTIVE",
-        emailVerifiedAt: now,
-      });
-      await f.service.sendEmailCode({
-        email: "ALINE@example.com",
-        purpose: "login",
-      });
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(f.challenge.purpose).toBe("login");
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    const f = fixture();
+    f.setAccount({
+      id: "existing-user",
+      email: "aline@example.com",
+      role: "CUSTOMER",
+      status: "ACTIVE",
+      emailVerifiedAt: now,
+    });
+    await f.service.sendEmailCode({
+      email: "ALINE@example.com",
+      purpose: "login",
+    });
+    expect(f.emailProvider.sent).toHaveLength(1);
+    expect(f.challenge.purpose).toBe("login");
   });
 
-  it("sends the OTP with Brevo authentication and structured sender/recipient fields", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ messageId: "test-message" }), {
-        status: 201,
-      }),
-    );
-    try {
-      const f = fixture();
-      const result = await f.service.sendEmailCode({
-        email: "ALINE@example.com",
+  it("sends the OTP with structured sender/recipient fields and branded content", async () => {
+    const f = fixture();
+    const result = await f.service.sendEmailCode({
+      email: "ALINE@example.com",
+      purpose: "register",
+      username: "Aline",
+    });
+    expect(f.emailProvider.sent).toHaveLength(1);
+    const sent = f.emailProvider.sent[0]!;
+    expect(sent.to).toBe("aline@example.com");
+    expect(sent.fromEmail).toBe("auth@example.com");
+    expect(sent.fromName).toBe("Eventis");
+    const otp = sent.text?.match(/code is (\d{6})\./)?.[1];
+    expect(otp).toBeDefined();
+    expect(sent.html).toContain(otp!);
+    expect(sent.html).toContain("You’re almost in.");
+    expect(sent.subject).toBe("Verify your email with Eventis");
+    expect(result.retryAfterSeconds).toBe(60);
+    expect(result).not.toHaveProperty("code");
+    expect(f.getAccount()).toBeNull();
+  });
+
+  it("explains a 401 delivery failure as a likely unauthorised-IP rejection", async () => {
+    const throwing = {
+      send: () =>
+        Promise.reject(
+          new AppError(ERROR_CODES.INTERNAL_ERROR, "rejected", 502, { internal: { status: 401 } }),
+        ),
+    };
+    const f = fixture({}, {}, throwing as unknown as FakeEmailProvider);
+    await assert.rejects(
+      f.service.sendEmailCode({
+        email: "aline@example.com",
         purpose: "register",
         username: "Aline",
-      });
-      const call = fetchSpy.mock.calls[0]!;
-      expect(call[0]).toBe("https://api.brevo.com/v3/smtp/email");
-      const options = call[1]!;
-      expect(options.method).toBe("POST");
-      expect(options.headers).toEqual({
-        "api-key": "test-email-key",
-        "Content-Type": "application/json",
-      });
-      assert.ok(typeof options.body === "string");
-      const body = JSON.parse(options.body) as {
-        sender: { email: string; name: string };
-        to: { email: string }[];
-        textContent: string;
-        htmlContent: string;
-        subject: string;
-      };
-      expect(body.sender).toEqual({
-        email: "auth@example.com",
-        name: "Eventis",
-      });
-      expect(body.to).toEqual([{ email: "aline@example.com" }]);
-      const otp = body.textContent.match(/code is (\d{6})\./)?.[1];
-      expect(otp).toBeDefined();
-      expect(body.htmlContent).toContain(otp!);
-      expect(body.htmlContent).toContain("You’re almost in.");
-      expect(body.subject).toBe(`${otp} · Verify your email with Eventis`);
-      expect(body.htmlContent).toContain(`${otp} is your Eventis verification code.`);
-      expect(result.retryAfterSeconds).toBe(60);
-      expect(result).not.toHaveProperty("code");
-      expect(f.getAccount()).toBeNull();
-    } finally {
-      fetchSpy.mockRestore();
-    }
+      }),
+      /authorised IPs/,
+    );
+    expect(f.challenge.consumedAt).toEqual(now);
+    expect(f.getSessions()).toBe(0);
   });
 
-  it("explains Brevo 401 responses as a likely unauthorised-IP rejection", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("rejected", { status: 401 }),
+  it("invalidates the challenge and returns a generic failure for other delivery errors", async () => {
+    const throwing = {
+      send: () =>
+        Promise.reject(
+          new AppError(ERROR_CODES.INTERNAL_ERROR, "server error", 502, { internal: { status: 500 } }),
+        ),
+    };
+    const f = fixture({}, {}, throwing as unknown as FakeEmailProvider);
+    await assert.rejects(
+      f.service.sendEmailCode({
+        email: "aline@example.com",
+        purpose: "register",
+        username: "Aline",
+      }),
+      /Unable to send/,
     );
-    try {
-      const f = fixture();
-      await assert.rejects(
-        f.service.sendEmailCode({
-          email: "aline@example.com",
-          purpose: "register",
-          username: "Aline",
-        }),
-        /authorised IPs/,
-      );
-      expect(f.challenge.consumedAt).toEqual(now);
-      expect(f.getSessions()).toBe(0);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    expect(f.challenge.consumedAt).toEqual(now);
+    expect(f.getSessions()).toBe(0);
   });
 
-  it("invalidates the challenge and returns a generic failure for other Brevo errors", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("server error", { status: 500 }),
+  it("explains a 403 delivery failure instead of returning a generic send failure", async () => {
+    const throwing = {
+      send: () =>
+        Promise.reject(
+          new AppError(ERROR_CODES.INTERNAL_ERROR, "forbidden", 502, { internal: { status: 403 } }),
+        ),
+    };
+    const f = fixture({}, {}, throwing as unknown as FakeEmailProvider);
+    await assert.rejects(
+      f.service.sendEmailCode({ email: "aline@example.com", purpose: "register", username: "Aline" }),
+      /Brevo API key’s transactional email permission/,
     );
-    try {
-      const f = fixture();
-      await assert.rejects(
-        f.service.sendEmailCode({
-          email: "aline@example.com",
-          purpose: "register",
-          username: "Aline",
-        }),
-        /Unable to send/,
-      );
-      expect(f.challenge.consumedAt).toEqual(now);
-      expect(f.getSessions()).toBe(0);
-    } finally {
-      fetchSpy.mockRestore();
-    }
-  });
-
-  it("explains Brevo 403 responses instead of returning a generic send failure", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response('{"code":"forbidden"}', { status: 403 }),
-    );
-    try {
-      const f = fixture();
-      await assert.rejects(
-        f.service.sendEmailCode({ email: "aline@example.com", purpose: "register", username: "Aline" }),
-        /Brevo API key’s transactional email permission/,
-      );
-      expect(f.challenge.consumedAt).toEqual(now);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    expect(f.challenge.consumedAt).toEqual(now);
   });
 
   it("fails before sending when the Brevo API key or sender is missing or invalid", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch");
-    try {
-      const missing = fixture({}, { BREVO_API_KEY: undefined });
-      await assert.rejects(
-        missing.service.sendEmailCode({
-          email: "aline@example.com",
-          purpose: "login",
-        }),
-        /not configured/,
-      );
-      const invalid = fixture({}, { AUTH_EMAIL_FROM: "invalid-sender" });
-      await assert.rejects(
-        invalid.service.sendEmailCode({
-          email: "aline@example.com",
-          purpose: "login",
-        }),
-        /not configured correctly/,
-      );
-      expect(fetchSpy).not.toHaveBeenCalled();
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    const missing = fixture({}, { BREVO_API_KEY: undefined });
+    await assert.rejects(
+      missing.service.sendEmailCode({
+        email: "aline@example.com",
+        purpose: "login",
+      }),
+      /not configured/,
+    );
+    const invalid = fixture({}, { AUTH_EMAIL_FROM: "invalid-sender" });
+    await assert.rejects(
+      invalid.service.sendEmailCode({
+        email: "aline@example.com",
+        purpose: "login",
+      }),
+      /not configured correctly/,
+    );
+    expect(missing.emailProvider.sent).toHaveLength(0);
+    expect(invalid.emailProvider.sent).toHaveLength(0);
   });
 
   it("uses the shared Brevo sender when AUTH_EMAIL_FROM is not set", async () => {
-    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 201 }));
-    try {
-      const f = fixture({}, { AUTH_EMAIL_FROM: undefined, BREVO_SENDER_EMAIL: "verified@example.com" });
-      await f.service.sendEmailCode({ email: "aline@example.com", purpose: "register", username: "Aline" });
-      const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-      const payload = JSON.parse(String(init.body)) as { sender: { email: string } };
-      expect(payload.sender.email).toBe("verified@example.com");
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    const f = fixture({}, { AUTH_EMAIL_FROM: undefined, BREVO_SENDER_EMAIL: "verified@example.com" });
+    await f.service.sendEmailCode({ email: "aline@example.com", purpose: "register", username: "Aline" });
+    expect(f.emailProvider.sent[0]?.fromEmail).toBe("verified@example.com");
   });
 });

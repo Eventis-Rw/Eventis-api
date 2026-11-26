@@ -12,6 +12,11 @@ import {
   type ManualPaymentStatus,
   type ManualPaymentSubmission,
 } from "../domain/manual-payment.js";
+import {
+  buildPaymentApprovedEmail,
+  buildPaymentRejectedEmail,
+  buildPaymentSubmittedEmail,
+} from "../emails/payment-emails.js";
 import { ManualPaymentRepository } from "../infrastructure/manual-payment.repository.js";
 import { PaymentRepository } from "../infrastructure/payment.repository.js";
 import { OrganiserApplicationsService } from "./organiser-applications.service.js";
@@ -155,14 +160,16 @@ export class ManualPaymentsService {
 
     const user = await this.repo.findUserContact(userId);
     if (user?.email) {
-      void this.emails.sendBestEffort({
-        to: user.email,
-        subject: `We received your payment (${submission.reference})`,
-        html: `<p>Hi${user.displayName ? ` ${user.displayName}` : ""},</p>
-<p>We received your payment submission for <strong>${planSnapshot.name}</strong> (${money(amountMinor, currency)}) and it's now waiting for review.</p>
-<p>Reference: <strong>${submission.reference}</strong></p>
-<p>We'll email you as soon as it's approved or if we need anything else from you.</p>`,
+      const email = buildPaymentSubmittedEmail({
+        displayName: user.displayName,
+        planName: planSnapshot.name,
+        amountLabel: money(amountMinor, currency),
+        reference: submission.reference,
       });
+      void this.emails.sendBestEffort(
+        { to: user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
+        `payment-submitted:${submission.reference}`,
+      );
     }
 
     return submission;
@@ -309,15 +316,18 @@ export class ManualPaymentsService {
     if (!changed) return resolved;
 
     if (submission.user.email) {
-      void this.emails.sendBestEffort({
-        to: submission.user.email,
-        subject: `Your payment was approved (${resolved.reference})`,
-        html: `<p>Hi${submission.user.displayName ? ` ${submission.user.displayName}` : ""},</p>
-<p>Your payment for <strong>${resolved.planSnapshot.name}</strong> has been verified.${submission.platform === "ORGANISER" ? " New organiser applications now await a separate review." : " Your plan is now active."}</p>
-<p>Reference: <strong>${resolved.reference}</strong><br/>
-Amount: ${money(resolved.amountMinor, resolved.currency)}<br/>
-Verified: ${now.toISOString()}</p>`,
+      const email = buildPaymentApprovedEmail({
+        displayName: submission.user.displayName,
+        planName: resolved.planSnapshot.name,
+        amountLabel: money(resolved.amountMinor, resolved.currency),
+        reference: resolved.reference,
+        verifiedAtIso: now.toISOString(),
+        isOrganiser: submission.platform === "ORGANISER",
       });
+      void this.emails.sendBestEffort(
+        { to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
+        `payment-approved:${resolved.reference}`,
+      );
     }
 
     return resolved;
@@ -351,15 +361,16 @@ Verified: ${now.toISOString()}</p>`,
     if (!resolved) return submission;
 
     if (submission.user.email) {
-      void this.emails.sendBestEffort({
-        to: submission.user.email,
-        subject: `Your payment could not be verified (${resolved.reference})`,
-        html: `<p>Hi${submission.user.displayName ? ` ${submission.user.displayName}` : ""},</p>
-<p>We couldn't verify your payment for <strong>${resolved.planSnapshot.name}</strong>.</p>
-<p>Reference: <strong>${resolved.reference}</strong><br/>
-Reason: ${rejectionReason}</p>
-<p>You can submit a new payment at any time from the app.</p>`,
+      const email = buildPaymentRejectedEmail({
+        displayName: submission.user.displayName,
+        planName: resolved.planSnapshot.name,
+        reference: resolved.reference,
+        rejectionReason,
       });
+      void this.emails.sendBestEffort(
+        { to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent },
+        `payment-rejected:${resolved.reference}`,
+      );
     }
 
     return resolved;
