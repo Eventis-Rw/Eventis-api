@@ -654,6 +654,46 @@ export class OrganisationRepository {
     });
   }
 
+  /**
+   * The subscription an event post would be charged against right now: the
+   * most recently created ACTIVE row whose window covers `now`. Mirrors the
+   * mobile app's own `activeOrganiserSubscription()` selection so the server
+   * enforces the same plan the client displays.
+   */
+  async findActivePostableSubscription(
+    userId: string,
+    now: Date,
+  ): Promise<OrganiserSubscription | null> {
+    return this.prisma.organiserSubscription.findFirst({
+      where: {
+        userId,
+        status: "ACTIVE",
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /** Atomically spends one post credit. Returns false if none was left (race-safe). */
+  async decrementPostsRemaining(subscriptionId: string): Promise<boolean> {
+    const { count } = await this.prisma.organiserSubscription.updateMany({
+      where: { id: subscriptionId, postsRemaining: { gt: 0 } },
+      data: { postsRemaining: { decrement: 1 } },
+    });
+    return count > 0;
+  }
+
+  /** Restores a post credit spent for an event that failed to publish. */
+  async incrementPostsRemaining(subscriptionId: string): Promise<void> {
+    await this.prisma.organiserSubscription.updateMany({
+      where: { id: subscriptionId },
+      data: { postsRemaining: { increment: 1 } },
+    });
+  }
+
   async eventOwnedByUser(eventId: string, userId: string) {
     return this.prisma.event.findFirst({
       where: {

@@ -290,6 +290,21 @@ export class StorageService {
     return this.uploadImage(key, file.data, file.mimetype);
   }
 
+  async uploadGroupAvatar(
+    conversationId: string,
+    file: { mimetype: string; data: Buffer; filename: string },
+  ): Promise<string> {
+    this.validateImage(file, "avatar_image");
+
+    let ext = extname(file.filename).toLowerCase();
+    if (!ext) {
+      ext = file.mimetype === "image/png" ? ".png" : file.mimetype === "image/webp" ? ".webp" : ".jpg";
+    }
+
+    const key = `groups/${conversationId}/avatar-${randomUUID()}${ext}`;
+    return this.uploadImage(key, file.data, file.mimetype);
+  }
+
 
   getPublicUrl(key: string | null): string | null {
     if (!key) return null;

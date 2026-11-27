@@ -4,6 +4,9 @@ import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module.js";
+import { ENV, type Env } from "./config/env.js";
+import { EMAIL_PROVIDER, type EmailProvider } from "./infrastructure/email/email-provider.js";
+import { startEmailWorker } from "./infrastructure/email/email-queue.js";
 import {
   runtimeName,
   runtimeVersion,
@@ -19,6 +22,10 @@ async function bootstrap(): Promise<void> {
 
   const logger = new Logger("worker");
   logger.log(`Eventis worker started — ${runtimeName()} ${runtimeVersion()}`);
+
+  const emailWorker = startEmailWorker(app.get<Env>(ENV), app.get<EmailProvider>(EMAIL_PROVIDER));
+  process.on("beforeExit", () => void emailWorker.close());
+
   const engagement = app.get(EngagementService);
   const runReminders = async () => {
     try {

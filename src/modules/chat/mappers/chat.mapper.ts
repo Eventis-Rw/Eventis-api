@@ -7,10 +7,13 @@ import type {
   InvitationRecord,
   MessageRecord,
   ParticipantRecord,
+  PollRecord,
 } from "../domain/chat.js";
 
 export interface ParticipantResponse {
   userId: string;
+  role: string;
+  status: string;
   isOnline?: boolean;
   joinedAt: string;
   lastReadAt: string | null;
@@ -41,6 +44,22 @@ export interface ReceiptResponse {
   readAt: string | null;
 }
 
+export interface PollOptionResponse {
+  id: string;
+  text: string;
+  position: number;
+  /** Visible to every participant, like WhatsApp's default (non-anonymous) poll. */
+  voterIds: string[];
+}
+
+export interface PollResponse {
+  id: string;
+  question: string;
+  createdAt: string;
+  options: PollOptionResponse[];
+  totalVotes: number;
+}
+
 export interface MessageResponse {
   id: string;
   conversationId: string;
@@ -56,6 +75,7 @@ export interface MessageResponse {
   deletedAt: string | null;
   attachments: AttachmentResponse[];
   receipts: ReceiptResponse[];
+  poll: PollResponse | null;
 }
 
 export interface ConversationResponse {
@@ -65,6 +85,14 @@ export interface ConversationResponse {
   contextId: string | null;
   connectionStatus: string | null;
   title: string | null;
+  description: string | null;
+  category: string | null;
+  isPublic: boolean;
+  requiresApproval: boolean;
+  avatarUrl: string | null;
+  createdBy: string | null;
+  inviteCode: string | null;
+  status: string;
   createdAt: string;
   updatedAt: string;
   unreadCount: number;
@@ -117,6 +145,25 @@ export function toAttachmentResponse(
   };
 }
 
+export function toPollResponse(poll: PollRecord): PollResponse {
+  const options = poll.options
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((option) => ({
+      id: option.id,
+      text: option.text,
+      position: option.position,
+      voterIds: option.votes.map((vote) => vote.userId),
+    }));
+  return {
+    id: poll.id,
+    question: poll.question,
+    createdAt: poll.createdAt.toISOString(),
+    options,
+    totalVotes: options.reduce((sum, option) => sum + option.voterIds.length, 0),
+  };
+}
+
 export function toMessageResponse(row: MessageRecord): MessageResponse {
   const deleted = row.deletedAt !== null;
   return {
@@ -139,6 +186,7 @@ export function toMessageResponse(row: MessageRecord): MessageResponse {
       deliveredAt: receipt.deliveredAt?.toISOString() ?? null,
       readAt: receipt.readAt?.toISOString() ?? null,
     })),
+    poll: !deleted && row.poll ? toPollResponse(row.poll) : null,
   };
 }
 
@@ -148,6 +196,8 @@ export function toParticipantResponse(
 ): ParticipantResponse {
   return {
     userId: row.userId,
+    role: row.role,
+    status: row.status,
     joinedAt: row.joinedAt.toISOString(),
     lastReadAt: row.lastReadAt?.toISOString() ?? null,
     isArchived: row.isArchived,
@@ -161,6 +211,7 @@ export function toConversationResponse(
   row: ConversationRecord | ConversationListItem,
   profiles: Map<string, ChatPublicProfile>,
   unreadCount = 0,
+  avatarUrlOf: (key: string | null) => string | null = () => null,
 ): ConversationResponse {
   const lastMessage = "lastMessage" in row ? row.lastMessage : null;
   const unread = "unreadCount" in row ? row.unreadCount : unreadCount;
@@ -171,6 +222,14 @@ export function toConversationResponse(
     contextId: row.contextId,
     connectionStatus: row.connectionStatus,
     title: row.title,
+    description: row.description,
+    category: row.category,
+    isPublic: row.isPublic,
+    requiresApproval: row.requiresApproval,
+    avatarUrl: avatarUrlOf(row.avatarKey),
+    createdBy: row.createdBy,
+    inviteCode: row.inviteCode,
+    status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     unreadCount: unread,

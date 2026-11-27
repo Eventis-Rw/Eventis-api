@@ -9,6 +9,7 @@ import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { ENV, type Env } from "../../../config/env.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
+import { EmailService } from "../../../infrastructure/email/email.service.js";
 import { generateOtpCode, otpMatches } from "../domain/otp.js";
 import { buildOtpEmail } from "../emails/otp-email.js";
 import { UserRepository } from "../infrastructure/identity.repository.js";
@@ -45,6 +46,7 @@ export class AlternativeAuthService {
     private readonly users: UserRepository,
     private readonly tokens: TokenService,
     private readonly clock: Clock,
+    private readonly emails: EmailService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -123,37 +125,40 @@ export class AlternativeAuthService {
     });
     // Only an eligible email login or registration sends a code.
     if (challenge.purpose !== "unavailable") {
-      let providerStatus: number | undefined;
       try {
-        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-          method: "POST",
-          headers: {
-            "api-key": this.env.BREVO_API_KEY,
-            "Content-Type": "application/json",
+        const { subject, htmlContent, textContent } = buildOtpEmail(code, input.purpose);
+        await this.emails.sendWithRetry(
+          {
+            to: email,
+            subject,
+            html: htmlContent,
+            text: textContent,
+            fromEmail: senderEmail,
+            fromName: senderName,
           },
-          body: JSON.stringify({
-            sender: { email: senderEmail, name: senderName },
-            to: [{ email }],
-            ...buildOtpEmail(code, input.purpose),
-          }),
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (!response.ok) {
-          providerStatus = response.status;
-          const providerResponse = await response.text().catch(() => "");
-          this.logger.error({ status: response.status, providerResponse }, "Brevo rejected email sign-in code");
-          throw new Error(`Brevo rejected email (${response.status})`);
-        }
+          { attempts: 2, delayMs: 300 },
+        );
       } catch (error) {
         this.logger.error({ err: error }, "Email sign-in code delivery failed");
         await this.prisma.emailSignInCode.update({
           where: { id: challenge.id },
           data: { consumedAt: now },
         });
+        const providerStatus =
+          error instanceof AppError
+            ? (error.options.internal?.status as number | undefined)
+            : undefined;
         if (providerStatus === 403) {
           throw new AppError(
             ERROR_CODES.INTERNAL_ERROR,
             "Email delivery was denied by the provider. Check the Brevo API key’s transactional email permission and the verified sender configuration.",
+            502,
+          );
+        }
+        if (providerStatus === 401) {
+          throw new AppError(
+            ERROR_CODES.INTERNAL_ERROR,
+            "Email delivery was rejected by the provider. The server's IP address may need to be added to Brevo's authorised IPs (Security settings).",
             502,
           );
         }

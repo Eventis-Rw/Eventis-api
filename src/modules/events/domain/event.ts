@@ -145,12 +145,22 @@ function assertValidEndDate(startDate: Date, endDate: Date | null): void {
   }
 }
 
-function assertValidPricing(
+/**
+ * Free entry has no price or ticket link. Paid entry is sold on an external ticket
+ * platform: the link is required and the price is optional (shown when provided).
+ */
+function assertValidAdmission(
   isPaid: boolean,
   priceMinor: bigint | null,
+  bookingUrl: string | null,
+  requireTicketUrl: boolean,
 ): void {
-  if (isPaid && (priceMinor === null || priceMinor <= 0n)) {
-    throw new Error("Paid events require a positive price");
+  if (!isPaid) return;
+  if (priceMinor !== null && priceMinor <= 0n) {
+    throw new Error("Ticket price must be greater than 0");
+  }
+  if (requireTicketUrl && !bookingUrl) {
+    throw new Error("Paid events need an external ticket link");
   }
 }
 
@@ -165,7 +175,8 @@ export function createEvent(
   assertValidEndDate(props.startDate, endDate);
   const isPaid = props.isPaid ?? false;
   const priceMinor = isPaid ? (props.priceMinor ?? null) : null;
-  assertValidPricing(isPaid, priceMinor);
+  const bookingUrl = isPaid ? props.bookingUrl?.trim() || null : null;
+  assertValidAdmission(isPaid, priceMinor, bookingUrl, true);
 
   return {
     title: props.title.trim(),
@@ -187,7 +198,7 @@ export function createEvent(
     isPaid,
     priceMinor,
     currency: props.currency?.trim().toUpperCase() || "RWF",
-    bookingUrl: props.bookingUrl?.trim() ?? null,
+    bookingUrl,
     instructions: props.instructions?.trim() ?? null,
     tags: props.tags ?? [],
     organisationId: props.organisationId ?? null,
@@ -277,11 +288,16 @@ export function applyEventUpdate(event: Event, props: UpdateEventProps): Event {
   const normalized: Event = {
     ...next,
     priceMinor: next.isPaid ? next.priceMinor : null,
+    bookingUrl: next.isPaid ? next.bookingUrl || null : null,
   };
   assertValidDate(normalized.startDate);
   assertValidTime(normalized.time);
   assertValidEndDate(normalized.startDate, normalized.endDate);
-  assertValidPricing(normalized.isPaid, normalized.priceMinor);
+  // Only insist on the ticket link when this update touches admission, so unrelated
+  // edits to older paid events (created before the link was required) still save.
+  const touchesAdmission =
+    props.isPaid !== undefined || props.bookingUrl !== undefined || props.priceMinor !== undefined;
+  assertValidAdmission(normalized.isPaid, normalized.priceMinor, normalized.bookingUrl, touchesAdmission);
   if (normalized.endTime) assertValidTime(normalized.endTime);
 
   if (props.status !== undefined && !canTransition(event.status, props.status)) {

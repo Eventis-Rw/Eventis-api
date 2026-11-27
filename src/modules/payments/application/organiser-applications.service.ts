@@ -1,12 +1,14 @@
 import { ERROR_CODES } from "@eventis/contracts";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { PrismaService } from "../../../infrastructure/database/prisma.service.js";
+import type { SendEmailInput } from "../../../infrastructure/email/email-provider.js";
 import { EmailService } from "../../../infrastructure/email/email.service.js";
 import { OrganisationsService } from "../../organisations/index.js";
+import { buildOrganiserApplicationDecisionEmail } from "../emails/organiser-application-emails.js";
 
 type ApplicationInput = {
   name: string;
@@ -18,12 +20,27 @@ type ApplicationInput = {
 
 @Injectable()
 export class OrganiserApplicationsService {
+  private readonly logger = new Logger(OrganiserApplicationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly organisations: OrganisationsService,
     private readonly emails: EmailService,
     private readonly clock: Clock,
   ) {}
+
+  /**
+   * Sends a notification email immediately (no queue/Redis involved) and
+   * never throws — a flaky email provider must not fail the admin action
+   * that triggered it. Retries once before giving up.
+   */
+  private async notify(input: SendEmailInput): Promise<void> {
+    try {
+      await this.emails.sendWithRetry(input, { attempts: 2, delayMs: 500 });
+    } catch (err) {
+      this.logger.error({ err, to: input.to, subject: input.subject }, "Failed to send email");
+    }
+  }
 
   async mine(userId: string) {
     return this.prisma.organiserApplication.findFirst({
@@ -160,13 +177,13 @@ export class OrganiserApplicationsService {
     });
     if (result.changed) {
       const user = await this.prisma.user.findUnique({ where: { id: result.app.userId }, select: { email: true } });
-      if (user?.email) void this.emails.sendBestEffort({
-        to: user.email,
-        subject: decision === "APPROVED" ? "Your organiser application was approved" : "Your organiser application was rejected",
-        html: decision === "APPROVED"
-          ? "<p>Your organiser account was approved. Open Eventis to access your dashboard.</p>"
-          : "<p>Your organiser application was rejected. Open Eventis to see the reason and next steps.</p>",
-      });
+      if (user?.email) {
+        const email = buildOrganiserApplicationDecisionEmail({
+          decision,
+          rejectionReason: decision === "REJECTED" ? rejectionReason ?? null : null,
+        });
+        void this.notify({ to: user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
+      }
     }
     return result.app;
   }

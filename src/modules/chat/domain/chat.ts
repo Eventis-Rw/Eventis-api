@@ -8,7 +8,22 @@ import type {
 } from "./messaging-policy.js";
 
 export type ConversationType = "DIRECT" | "GROUP";
-export type MessageType = "TEXT" | "IMAGE" | "FILE" | "VOICE";
+export type ConversationStatus = "ACTIVE" | "SUSPENDED" | "DELETED";
+export type ParticipantRole = "OWNER" | "ADMIN" | "MEMBER";
+export type ParticipantStatus =
+  | "ACTIVE"
+  | "PENDING_APPROVAL"
+  | "REMOVED"
+  | "LEFT"
+  | "BANNED";
+export const GROUP_MEMBER_LIMIT = 1000;
+export type ReportCategory =
+  | "SPAM"
+  | "HARASSMENT"
+  | "IMPERSONATION"
+  | "INAPPROPRIATE_CONTENT"
+  | "OTHER";
+export type MessageType = "TEXT" | "IMAGE" | "FILE" | "VOICE" | "POLL";
 export type ReceiptStatus = "SENT" | "DELIVERED" | "READ";
 export type InvitationStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "CANCELLED";
 export type CallType = "VOICE" | "VIDEO";
@@ -104,12 +119,30 @@ export interface ParticipantRecord {
   id: string;
   conversationId: string;
   userId: string;
+  role: ParticipantRole;
+  status: ParticipantStatus;
+  approvedBy: string | null;
   joinedAt: Date;
   lastReadAt: Date | null;
   isArchived: boolean;
   isMuted: boolean;
   hiddenAt: Date | null;
   clearedBeforeMessageId: string | null;
+}
+
+/** Whether a participant-status change is a legal transition (mirrors canTransitionCall's shape). */
+export function canTransitionParticipantStatus(
+  from: ParticipantStatus,
+  to: ParticipantStatus,
+): boolean {
+  if (from === to) return true;
+  // BANNED only ever changes via an explicit unban (-> REMOVED) or reinstatement (-> ACTIVE).
+  if (from === "BANNED") return to === "ACTIVE" || to === "REMOVED";
+  // Anyone not currently banned can (re)join open groups directly, or re-request approval-gated ones.
+  if (to === "ACTIVE" || to === "PENDING_APPROVAL") return true;
+  if (from === "ACTIVE" && (to === "LEFT" || to === "REMOVED" || to === "BANNED")) return true;
+  if (from === "PENDING_APPROVAL" && to === "REMOVED") return true;
+  return false;
 }
 
 export interface AttachmentRecord {
@@ -134,6 +167,29 @@ export interface ReceiptRecord {
   readAt: Date | null;
 }
 
+export interface PollVoteRecord {
+  id: string;
+  pollOptionId: string;
+  userId: string;
+  createdAt: Date;
+}
+
+export interface PollOptionRecord {
+  id: string;
+  pollId: string;
+  text: string;
+  position: number;
+  votes: PollVoteRecord[];
+}
+
+export interface PollRecord {
+  id: string;
+  messageId: string;
+  question: string;
+  createdAt: Date;
+  options: PollOptionRecord[];
+}
+
 export interface MessageRecord {
   id: string;
   conversationId: string;
@@ -149,6 +205,7 @@ export interface MessageRecord {
   deletedAt: Date | null;
   attachments: AttachmentRecord[];
   receipts: ReceiptRecord[];
+  poll: PollRecord | null;
 }
 
 export interface ConversationRecord {
@@ -159,6 +216,14 @@ export interface ConversationRecord {
   title: string | null;
   directPairKey: string | null;
   connectionStatus: ConnectionStatus | null;
+  description: string | null;
+  category: string | null;
+  isPublic: boolean;
+  requiresApproval: boolean;
+  avatarKey: string | null;
+  createdBy: string | null;
+  inviteCode: string | null;
+  status: ConversationStatus;
   createdAt: Date;
   updatedAt: Date;
   participants: ParticipantRecord[];

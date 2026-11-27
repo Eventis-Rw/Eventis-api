@@ -114,7 +114,7 @@ export class EventRepository {
     const [rows, total] = await Promise.all([
       this.prisma.event.findMany({
         where,
-        orderBy: [{ startDate: "asc" }, { createdAt: "desc" }, { eventId: "asc" }],
+        orderBy: [{ createdAt: "desc" }, { eventId: "asc" }],
         skip,
         take: params.limit,
         include: {

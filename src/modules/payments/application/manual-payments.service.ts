@@ -1,10 +1,11 @@
 import { ERROR_CODES } from "@eventis/contracts";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
 import { Clock } from "../../../common/clock.js";
 import { AppError } from "../../../common/errors/app-error.js";
 import { EmailService } from "../../../infrastructure/email/email.service.js";
+import type { SendEmailInput } from "../../../infrastructure/email/email-provider.js";
 import { OrganisationsService } from "../../organisations/index.js";
 import {
   type ManualPaymentPlanSnapshot,
@@ -12,8 +13,15 @@ import {
   type ManualPaymentStatus,
   type ManualPaymentSubmission,
 } from "../domain/manual-payment.js";
+import { buildOrganiserApplicationInReviewEmail } from "../emails/organiser-application-emails.js";
+import {
+  buildPaymentApprovedEmail,
+  buildPaymentRejectedEmail,
+  buildPaymentSubmittedEmail,
+} from "../emails/payment-emails.js";
 import { ManualPaymentRepository } from "../infrastructure/manual-payment.repository.js";
 import { PaymentRepository } from "../infrastructure/payment.repository.js";
+
 import { OrganiserApplicationsService } from "./organiser-applications.service.js";
 
 /**
@@ -30,6 +38,8 @@ function money(amountMinor: bigint, currency: string): string {
 
 @Injectable()
 export class ManualPaymentsService {
+  private readonly logger = new Logger(ManualPaymentsService.name);
+
   constructor(
     private readonly repo: ManualPaymentRepository,
     private readonly payments: PaymentRepository,
@@ -38,6 +48,19 @@ export class ManualPaymentsService {
     private readonly clock: Clock,
     private readonly applications: OrganiserApplicationsService,
   ) {}
+
+  /**
+   * Sends a notification email immediately (no queue/Redis involved) and
+   * never throws — a flaky email provider must not fail the admin/user
+   * action that triggered it. Retries once before giving up.
+   */
+  private async notify(input: SendEmailInput): Promise<void> {
+    try {
+      await this.emails.sendWithRetry(input, { attempts: 2, delayMs: 500 });
+    } catch (err) {
+      this.logger.error({ err, to: input.to, subject: input.subject }, "Failed to send email");
+    }
+  }
 
   // ---- User: submit & track ------------------------------------------------
 
@@ -155,14 +178,13 @@ export class ManualPaymentsService {
 
     const user = await this.repo.findUserContact(userId);
     if (user?.email) {
-      void this.emails.sendBestEffort({
-        to: user.email,
-        subject: `We received your payment (${submission.reference})`,
-        html: `<p>Hi${user.displayName ? ` ${user.displayName}` : ""},</p>
-<p>We received your payment submission for <strong>${planSnapshot.name}</strong> (${money(amountMinor, currency)}) and it's now waiting for review.</p>
-<p>Reference: <strong>${submission.reference}</strong></p>
-<p>We'll email you as soon as it's approved or if we need anything else from you.</p>`,
+      const email = buildPaymentSubmittedEmail({
+        displayName: user.displayName,
+        planName: planSnapshot.name,
+        amountLabel: money(amountMinor, currency),
+        reference: submission.reference,
       });
+      void this.notify({ to: user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
     }
 
     return submission;
@@ -219,8 +241,9 @@ export class ManualPaymentsService {
     verifiedTransactionId?: string,
   ): Promise<ManualPaymentSubmission> {
     const now = this.clock.now();
-    const { submission, resolved, changed } = await this.repo.transaction(
+    const { submission, resolved, changed, appInReview } = await this.repo.transaction(
       async (tx) => {
+        let appInReview = false;
         const submission = await this.repo.findSubmissionById(id, tx);
         if (!submission) throw AppError.notFound("That payment");
         const resolved = await this.repo.resolve(
@@ -234,7 +257,7 @@ export class ManualPaymentsService {
           tx,
         );
         if (!resolved)
-          return { submission, resolved: submission, changed: false };
+          return { submission, resolved: submission, changed: false, appInReview: false };
         if (submission.platform === "FINDLOVE") {
           if (!submission.installmentPlanId)
             throw AppError.validation({
@@ -280,6 +303,7 @@ export class ManualPaymentsService {
           const user = await tx.user.findUniqueOrThrow({ where: { id: submission.userId }, select: { accountType: true } });
           if (user.accountType !== "POSTER") {
             await this.applications.paymentVerified(submission.id, submission.userId, tx);
+            appInReview = true;
           } else await this.organisations.activateFromManualPayment(
             submission.userId,
             submission.organiserPlanId,
@@ -295,7 +319,7 @@ export class ManualPaymentsService {
             },
           );
         }
-        return { submission, resolved, changed: true };
+        return { submission, resolved, changed: true, appInReview };
       },
     ).catch((error: unknown) => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -309,15 +333,20 @@ export class ManualPaymentsService {
     if (!changed) return resolved;
 
     if (submission.user.email) {
-      void this.emails.sendBestEffort({
-        to: submission.user.email,
-        subject: `Your payment was approved (${resolved.reference})`,
-        html: `<p>Hi${submission.user.displayName ? ` ${submission.user.displayName}` : ""},</p>
-<p>Your payment for <strong>${resolved.planSnapshot.name}</strong> has been verified.${submission.platform === "ORGANISER" ? " New organiser applications now await a separate review." : " Your plan is now active."}</p>
-<p>Reference: <strong>${resolved.reference}</strong><br/>
-Amount: ${money(resolved.amountMinor, resolved.currency)}<br/>
-Verified: ${now.toISOString()}</p>`,
+      const email = buildPaymentApprovedEmail({
+        displayName: submission.user.displayName,
+        planName: resolved.planSnapshot.name,
+        amountLabel: money(resolved.amountMinor, resolved.currency),
+        reference: resolved.reference,
+        verifiedAtIso: now.toISOString(),
+        isOrganiser: submission.platform === "ORGANISER",
       });
+      void this.notify({ to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
+    }
+
+    if (appInReview && submission.user.email) {
+      const reviewEmail = buildOrganiserApplicationInReviewEmail();
+      void this.notify({ to: submission.user.email, subject: reviewEmail.subject, html: reviewEmail.htmlContent, text: reviewEmail.textContent });
     }
 
     return resolved;
@@ -351,15 +380,13 @@ Verified: ${now.toISOString()}</p>`,
     if (!resolved) return submission;
 
     if (submission.user.email) {
-      void this.emails.sendBestEffort({
-        to: submission.user.email,
-        subject: `Your payment could not be verified (${resolved.reference})`,
-        html: `<p>Hi${submission.user.displayName ? ` ${submission.user.displayName}` : ""},</p>
-<p>We couldn't verify your payment for <strong>${resolved.planSnapshot.name}</strong>.</p>
-<p>Reference: <strong>${resolved.reference}</strong><br/>
-Reason: ${rejectionReason}</p>
-<p>You can submit a new payment at any time from the app.</p>`,
+      const email = buildPaymentRejectedEmail({
+        displayName: submission.user.displayName,
+        planName: resolved.planSnapshot.name,
+        reference: resolved.reference,
+        rejectionReason,
       });
+      void this.notify({ to: submission.user.email, subject: email.subject, html: email.htmlContent, text: email.textContent });
     }
 
     return resolved;

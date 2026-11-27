@@ -91,3 +91,49 @@ describe("applyEventUpdate", () => {
     expect(updated.status).toBe("draft");
   });
 });
+
+describe("free and paid entry", () => {
+  const props = {
+    title: "Kigali Jazz Night",
+    location: "KG 9 Ave, Kimihurura",
+    startDate: new Date("2026-10-01T00:00:00.000Z"),
+    time: "18:00",
+    posterId: base.posterId,
+  };
+  const now = new Date("2026-09-01T00:00:00.000Z");
+  const tickets = "https://tickets.example.rw/jazz";
+
+  it("free entry stores no price or ticket link", () => {
+    const event = createEvent({ ...props, isPaid: false, priceMinor: 5000n, bookingUrl: tickets }, now);
+    expect(event.isPaid).toBe(false);
+    expect(event.priceMinor).toBeNull();
+    expect(event.bookingUrl).toBeNull();
+  });
+
+  it("paid entry needs the external ticket link but not a price", () => {
+    const event = createEvent({ ...props, isPaid: true, bookingUrl: tickets }, now);
+    expect(event.isPaid).toBe(true);
+    expect(event.priceMinor).toBeNull();
+    expect(event.bookingUrl).toBe(tickets);
+    expect(createEvent({ ...props, isPaid: true, priceMinor: 5000n, bookingUrl: tickets }, now).priceMinor).toBe(5000n);
+  });
+
+  it("rejects paid entry without a ticket link, or with a zero price", () => {
+    expect(() => createEvent({ ...props, isPaid: true }, now)).toThrow(/ticket link/);
+    expect(() => createEvent({ ...props, isPaid: true, priceMinor: 0n, bookingUrl: tickets }, now)).toThrow(/price/);
+  });
+
+  it("switching to free clears the price and ticket link", () => {
+    const paid: Event = { ...base, isPaid: true, priceMinor: 5000n, bookingUrl: tickets };
+    const updated = applyEventUpdate(paid, { isPaid: false });
+    expect(updated.priceMinor).toBeNull();
+    expect(updated.bookingUrl).toBeNull();
+  });
+
+  it("an older paid event without a link can still get unrelated edits, but not a paid update", () => {
+    const legacy: Event = { ...base, isPaid: true, priceMinor: 5000n, bookingUrl: null };
+    expect(applyEventUpdate(legacy, { title: "New title" }).title).toBe("New title");
+    expect(() => applyEventUpdate(legacy, { isPaid: true })).toThrow(/ticket link/);
+    expect(applyEventUpdate(legacy, { isPaid: true, bookingUrl: tickets }).bookingUrl).toBe(tickets);
+  });
+});

@@ -12,7 +12,12 @@ export type PolicyErrorCode =
   | "PENDING_LIMIT_REACHED"
   | "REQUEST_NOT_ACCEPTED"
   | "BLOCKED"
-  | "EVENT_ASSOCIATION_REQUIRED";
+  | "EVENT_ASSOCIATION_REQUIRED"
+  | "GROUP_FULL"
+  | "NOT_GROUP_ADMIN"
+  | "GROUP_BANNED"
+  | "ALREADY_MEMBER"
+  | "GROUP_JOIN_NOT_ALLOWED";
 
 export type PolicyDecision =
   { allowed: true } | { allowed: false; code: PolicyErrorCode };
@@ -87,6 +92,11 @@ export const POLICY_MESSAGES: Record<PolicyErrorCode, string> = {
   REQUEST_NOT_ACCEPTED: "Messaging is not available for this request",
   BLOCKED: "Messaging is blocked between these users",
   EVENT_ASSOCIATION_REQUIRED: "Both people must be associated with this event",
+  GROUP_FULL: "This group has reached its member limit",
+  NOT_GROUP_ADMIN: "Only group owners and admins can do this",
+  GROUP_BANNED: "You have been banned from this group",
+  ALREADY_MEMBER: "You are already a member of this group",
+  GROUP_JOIN_NOT_ALLOWED: "This group requires an invitation to join",
 };
 
 export function backfillDirectPairKey(

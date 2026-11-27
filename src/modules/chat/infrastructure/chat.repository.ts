@@ -5,9 +5,11 @@ import type {
   ConnectionRequest as PrismaConnection,
   Conversation as PrismaConversation,
   ConversationParticipant as PrismaParticipant,
-  Message as PrismaMessage,
   MessageAttachment as PrismaAttachment,
   MessageReceipt as PrismaReceipt,
+  Poll as PrismaPoll,
+  PollOption as PrismaPollOption,
+  PollVote as PrismaPollVote,
   Prisma,
 } from "@prisma/client";
 
@@ -20,15 +22,22 @@ import type {
   ConnectionRequestRecord,
   ConversationListItem,
   ConversationRecord,
+  ConversationStatus,
   ConversationType,
   InvitationRecord,
   MessageRecord,
   MessageType,
   ParticipantRecord,
+  ParticipantRole,
+  ParticipantStatus,
+  PollOptionRecord,
+  ReportCategory,
+  PollRecord,
+  PollVoteRecord,
   ReceiptRecord,
   ReceiptStatus,
 } from "../domain/chat.js";
-import { CONTACT_SYNC_MAX, PolicyViolationError } from "../domain/chat.js";
+import { CONTACT_SYNC_MAX, GROUP_MEMBER_LIMIT, PolicyViolationError } from "../domain/chat.js";
 import type {
   ConnectionFacts,
   EventFacts,
@@ -40,6 +49,14 @@ const conversationInclude = {
   participants: true,
   connectionRequest: true,
 } as const;
+
+const messageInclude = {
+  attachments: true,
+  receipts: true,
+  poll: { include: { options: { include: { votes: true }, orderBy: { position: "asc" } } } },
+} satisfies Prisma.MessageInclude;
+
+type MessageRow = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 
 @Injectable()
 export class ChatRepository {
@@ -88,6 +105,15 @@ export class ChatRepository {
     directPairKey: string | null;
     participantUserIds: string[];
     connection?: { requesterId: string; recipientId: string };
+    group?: {
+      description: string | null;
+      category: string | null;
+      isPublic: boolean;
+      requiresApproval: boolean;
+      avatarKey: string | null;
+      createdBy: string;
+      inviteCode: string;
+    };
   }): Promise<ConversationRecord> {
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.conversation.create({
@@ -97,8 +123,24 @@ export class ChatRepository {
           contextId: input.contextId,
           title: input.title,
           directPairKey: input.directPairKey,
+          ...(input.group
+            ? {
+                description: input.group.description,
+                category: input.group.category,
+                isPublic: input.group.isPublic,
+                requiresApproval: input.group.requiresApproval,
+                avatarKey: input.group.avatarKey,
+                createdBy: input.group.createdBy,
+                inviteCode: input.group.inviteCode,
+              }
+            : {}),
           participants: {
-            create: input.participantUserIds.map((userId) => ({ userId })),
+            create: input.participantUserIds.map((userId) => ({
+              userId,
+              ...(input.group && userId === input.group.createdBy
+                ? { role: "OWNER" as const }
+                : {}),
+            })),
           },
         },
         include: conversationInclude,
@@ -130,11 +172,13 @@ export class ChatRepository {
   }): Promise<{ items: ConversationListItem[]; total: number }> {
     const where: Prisma.ConversationWhereInput = {
       service: input.service,
+      status: { not: "DELETED" },
       participants: {
         some: {
           userId: input.userId,
           isArchived: input.archived,
           hiddenAt: null,
+          status: "ACTIVE",
         },
       },
     };
@@ -147,7 +191,7 @@ export class ChatRepository {
           messages: {
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             take: 1,
-            include: { attachments: true, receipts: true },
+            include: messageInclude,
           },
         },
         orderBy: { updatedAt: "desc" },
@@ -204,6 +248,318 @@ export class ChatRepository {
       },
     });
     return toParticipant(row);
+  }
+
+  // ---------- Groups ----------
+
+  async searchPublicGroups(input: {
+    query?: string | undefined;
+    category?: string | undefined;
+    service: MessagingService;
+    viewerId: string;
+    page: number;
+    limit: number;
+  }): Promise<{ items: ConversationRecord[]; total: number }> {
+    const where: Prisma.ConversationWhereInput = {
+      type: "GROUP",
+      service: input.service,
+      isPublic: true,
+      status: "ACTIVE",
+      ...(input.category ? { category: { equals: input.category, mode: "insensitive" } } : {}),
+      ...(input.query
+        ? {
+            OR: [
+              { title: { contains: input.query, mode: "insensitive" } },
+              { description: { contains: input.query, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+    const skip = (input.page - 1) * input.limit;
+    const [rows, total] = await Promise.all([
+      this.prisma.conversation.findMany({
+        where,
+        include: conversationInclude,
+        orderBy: [{ updatedAt: "desc" }],
+        skip,
+        take: input.limit,
+      }),
+      this.prisma.conversation.count({ where }),
+    ]);
+    return { items: rows.map(toConversation), total };
+  }
+
+  async findConversationByInviteCode(
+    inviteCode: string,
+  ): Promise<ConversationRecord | null> {
+    const row = await this.prisma.conversation.findUnique({
+      where: { inviteCode },
+      include: conversationInclude,
+    });
+    return row ? toConversation(row) : null;
+  }
+
+  async countActiveMembers(conversationId: string): Promise<number> {
+    return this.prisma.conversationParticipant.count({
+      where: { conversationId, status: "ACTIVE" },
+    });
+  }
+
+  async findParticipant(
+    conversationId: string,
+    userId: string,
+  ): Promise<ParticipantRecord | null> {
+    const row = await this.prisma.conversationParticipant.findUnique({
+      where: { conversationId_userId: { conversationId, userId } },
+    });
+    return row ? toParticipant(row) : null;
+  }
+
+  async listParticipants(conversationId: string): Promise<ParticipantRecord[]> {
+    const rows = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, status: { not: "REMOVED" } },
+      orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
+    });
+    return rows.map(toParticipant);
+  }
+
+  async listPendingRequests(conversationId: string): Promise<ParticipantRecord[]> {
+    const rows = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, status: "PENDING_APPROVAL" },
+      orderBy: { joinedAt: "asc" },
+    });
+    return rows.map(toParticipant);
+  }
+
+  /** Adds (or reactivates/re-requests) a participant row; respects GROUP_MEMBER_LIMIT on brand-new rows. */
+  async upsertParticipant(input: {
+    conversationId: string;
+    userId: string;
+    role?: ParticipantRole;
+    status: ParticipantStatus;
+    approvedBy?: string | null;
+  }): Promise<ParticipantRecord> {
+    const existing = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        conversationId_userId: { conversationId: input.conversationId, userId: input.userId },
+      },
+    });
+    if (!existing) {
+      const activeCount = await this.countActiveMembers(input.conversationId);
+      if (input.status === "ACTIVE" && activeCount >= GROUP_MEMBER_LIMIT) {
+        throw new PolicyViolationError("GROUP_FULL");
+      }
+      const row = await this.prisma.conversationParticipant.create({
+        data: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+          role: input.role ?? "MEMBER",
+          status: input.status,
+          approvedBy: input.approvedBy ?? null,
+        },
+      });
+      return toParticipant(row);
+    }
+    if (input.status === "ACTIVE" && existing.status !== "ACTIVE") {
+      const activeCount = await this.countActiveMembers(input.conversationId);
+      if (activeCount >= GROUP_MEMBER_LIMIT) {
+        throw new PolicyViolationError("GROUP_FULL");
+      }
+    }
+    const row = await this.prisma.conversationParticipant.update({
+      where: { id: existing.id },
+      data: {
+        status: input.status,
+        ...(input.role ? { role: input.role } : {}),
+        ...(input.approvedBy !== undefined ? { approvedBy: input.approvedBy } : {}),
+      },
+    });
+    return toParticipant(row);
+  }
+
+  async setParticipantStatus(input: {
+    conversationId: string;
+    userId: string;
+    status: ParticipantStatus;
+    approvedBy?: string | null;
+  }): Promise<ParticipantRecord> {
+    const row = await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: { conversationId: input.conversationId, userId: input.userId },
+      },
+      data: {
+        status: input.status,
+        ...(input.approvedBy !== undefined ? { approvedBy: input.approvedBy } : {}),
+      },
+    });
+    return toParticipant(row);
+  }
+
+  async setParticipantRole(
+    conversationId: string,
+    userId: string,
+    role: ParticipantRole,
+  ): Promise<ParticipantRecord> {
+    const row = await this.prisma.conversationParticipant.update({
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { role },
+    });
+    return toParticipant(row);
+  }
+
+  /** Atomically swaps OWNER between two participants. */
+  async transferOwnership(
+    conversationId: string,
+    fromUserId: string,
+    toUserId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.conversationParticipant.update({
+        where: { conversationId_userId: { conversationId, userId: fromUserId } },
+        data: { role: "ADMIN" },
+      }),
+      this.prisma.conversationParticipant.update({
+        where: { conversationId_userId: { conversationId, userId: toUserId } },
+        data: { role: "OWNER" },
+      }),
+    ]);
+  }
+
+  async updateGroupSettings(input: {
+    conversationId: string;
+    title?: string | null;
+    description?: string | null;
+    category?: string | null;
+    isPublic?: boolean;
+    requiresApproval?: boolean;
+    avatarKey?: string | null;
+  }): Promise<ConversationRecord> {
+    const row = await this.prisma.conversation.update({
+      where: { id: input.conversationId },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.category !== undefined ? { category: input.category } : {}),
+        ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
+        ...(input.requiresApproval !== undefined
+          ? { requiresApproval: input.requiresApproval }
+          : {}),
+        ...(input.avatarKey !== undefined ? { avatarKey: input.avatarKey } : {}),
+      },
+      include: conversationInclude,
+    });
+    return toConversation(row);
+  }
+
+  async setConversationStatus(
+    conversationId: string,
+    status: ConversationStatus,
+  ): Promise<ConversationRecord> {
+    const row = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status },
+      include: conversationInclude,
+    });
+    return toConversation(row);
+  }
+
+  // ---------- Admin (Chat Management dashboard) ----------
+
+  async adminChatOverview(service: MessagingService) {
+    const [
+      totalConversations,
+      totalDirect,
+      totalGroup,
+      activeGroups,
+      publicGroups,
+      privateGroups,
+      suspendedGroups,
+      registeredGroupMembers,
+      totalMessages,
+      reportedConversations,
+    ] = await Promise.all([
+      this.prisma.conversation.count({ where: { service, status: { not: "DELETED" } } }),
+      this.prisma.conversation.count({ where: { service, type: "DIRECT", status: { not: "DELETED" } } }),
+      this.prisma.conversation.count({ where: { service, type: "GROUP", status: { not: "DELETED" } } }),
+      this.prisma.conversation.count({ where: { service, type: "GROUP", status: "ACTIVE" } }),
+      this.prisma.conversation.count({ where: { service, type: "GROUP", isPublic: true, status: { not: "DELETED" } } }),
+      this.prisma.conversation.count({ where: { service, type: "GROUP", isPublic: false, status: { not: "DELETED" } } }),
+      this.prisma.conversation.count({ where: { service, type: "GROUP", status: "SUSPENDED" } }),
+      this.prisma.conversationParticipant.count({
+        where: { status: "ACTIVE", conversation: { service, type: "GROUP" } },
+      }),
+      this.prisma.message.count({
+        where: { deletedAt: null, conversation: { service } },
+      }),
+      this.prisma.userReport.findMany({
+        where: { conversationId: { not: null }, conversation: { service } },
+        select: { conversationId: true },
+        distinct: ["conversationId"],
+      }).then((rows) => rows.length),
+    ]);
+    return {
+      totalConversations,
+      totalDirect,
+      totalGroup,
+      activeGroups,
+      publicGroups,
+      privateGroups,
+      suspendedGroups,
+      registeredGroupMembers,
+      totalMessages,
+      reportedConversations,
+    };
+  }
+
+  async adminListConversations(input: {
+    type?: ConversationType | undefined;
+    status?: ConversationStatus | undefined;
+    query?: string | undefined;
+    service: MessagingService;
+    page: number;
+    limit: number;
+  }): Promise<{ items: ConversationRecord[]; total: number }> {
+    const isUuid = input.query ? /^[0-9a-f-]{32,36}$/i.test(input.query) : false;
+    const where: Prisma.ConversationWhereInput = {
+      service: input.service,
+      ...(input.type ? { type: input.type } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.query
+        ? isUuid
+          ? { id: input.query }
+          : {
+              OR: [
+                { title: { contains: input.query, mode: "insensitive" } },
+                { description: { contains: input.query, mode: "insensitive" } },
+                {
+                  participants: {
+                    some: {
+                      user: {
+                        OR: [
+                          { displayName: { contains: input.query, mode: "insensitive" } },
+                          { username: { contains: input.query, mode: "insensitive" } },
+                          { phone: { contains: input.query, mode: "insensitive" } },
+                        ],
+                      },
+                    },
+                  },
+                },
+              ],
+            }
+        : {}),
+    };
+    const skip = (input.page - 1) * input.limit;
+    const [rows, total] = await Promise.all([
+      this.prisma.conversation.findMany({
+        where,
+        include: conversationInclude,
+        orderBy: { updatedAt: "desc" },
+        skip,
+        take: input.limit,
+      }),
+      this.prisma.conversation.count({ where }),
+    ]);
+    return { items: rows.map(toConversation), total };
   }
 
   async findLatestMessage(
@@ -330,7 +686,7 @@ export class ChatRepository {
   async findMessageById(id: string): Promise<MessageRecord | null> {
     const row = await this.prisma.message.findUnique({
       where: { id },
-      include: { attachments: true, receipts: true },
+      include: messageInclude,
     });
     return row ? toMessage(row) : null;
   }
@@ -343,7 +699,7 @@ export class ChatRepository {
       where: {
         senderId_clientMessageId: { senderId, clientMessageId },
       },
-      include: { attachments: true, receipts: true },
+      include: messageInclude,
     });
     return row ? toMessage(row) : null;
   }
@@ -394,7 +750,7 @@ export class ChatRepository {
             })),
           },
         },
-        include: { attachments: true, receipts: true },
+        include: messageInclude,
       });
       await tx.conversation.update({
         where: { id: input.conversationId },
@@ -403,6 +759,91 @@ export class ChatRepository {
       return created;
     });
     return toMessage(row);
+  }
+
+  async createPollMessage(input: {
+    conversationId: string;
+    senderId: string;
+    question: string;
+    options: string[];
+    recipientParticipantIds: string[];
+    now: Date;
+  }): Promise<MessageRecord> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.message.create({
+        data: {
+          conversationId: input.conversationId,
+          senderId: input.senderId,
+          type: "POLL",
+          content: null,
+          createdAt: input.now,
+          updatedAt: input.now,
+          receipts: {
+            create: input.recipientParticipantIds.map((participantId) => ({
+              participantId,
+              status: "SENT",
+            })),
+          },
+          poll: {
+            create: {
+              question: input.question,
+              createdAt: input.now,
+              options: {
+                create: input.options.map((text, position) => ({ text, position })),
+              },
+            },
+          },
+        },
+        include: messageInclude,
+      });
+      await tx.conversation.update({
+        where: { id: input.conversationId },
+        data: { updatedAt: input.now },
+      });
+      return created;
+    });
+    return toMessage(row);
+  }
+
+  async findPollOwningMessage(pollId: string): Promise<MessageRecord | null> {
+    const row = await this.prisma.message.findFirst({
+      where: { poll: { id: pollId } },
+      include: messageInclude,
+    });
+    return row ? toMessage(row) : null;
+  }
+
+  /** Single-choice: casting a vote replaces any earlier vote by the same user on this poll. */
+  async castPollVote(input: {
+    pollId: string;
+    pollOptionId: string;
+    userId: string;
+    now: Date;
+  }): Promise<MessageRecord | null> {
+    await this.prisma.$transaction([
+      this.prisma.pollVote.deleteMany({
+        where: { pollId: input.pollId, userId: input.userId },
+      }),
+      this.prisma.pollVote.create({
+        data: {
+          pollId: input.pollId,
+          pollOptionId: input.pollOptionId,
+          userId: input.userId,
+          createdAt: input.now,
+        },
+      }),
+    ]);
+    return this.findPollOwningMessage(input.pollId);
+  }
+
+  async retractPollVote(input: {
+    pollId: string;
+    userId: string;
+  }): Promise<MessageRecord | null> {
+    await this.prisma.pollVote.deleteMany({
+      where: { pollId: input.pollId, userId: input.userId },
+    });
+    return this.findPollOwningMessage(input.pollId);
   }
 
   async listMessages(input: {
@@ -434,7 +875,7 @@ export class ChatRepository {
             }
           : {}),
       },
-      include: { attachments: true, receipts: true },
+      include: messageInclude,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: input.limit,
     });
@@ -456,7 +897,7 @@ export class ChatRepository {
           ? { deletedAt: input.deletedAt }
           : {}),
       },
-      include: { attachments: true, receipts: true },
+      include: messageInclude,
     });
     return toMessage(row);
   }
@@ -799,8 +1240,10 @@ export class ChatRepository {
 
   async createReport(input: {
     reporterId: string;
-    reportedUserId: string;
+    reportedUserId: string | null;
     conversationId: string | null;
+    messageId: string | null;
+    category: ReportCategory | null;
     reason: string;
     details: string | null;
   }): Promise<{ id: string }> {
@@ -944,6 +1387,9 @@ function toParticipant(row: PrismaParticipant): ParticipantRecord {
     id: row.id,
     conversationId: row.conversationId,
     userId: row.userId,
+    role: row.role,
+    status: row.status,
+    approvedBy: row.approvedBy,
     joinedAt: row.joinedAt,
     lastReadAt: row.lastReadAt,
     isArchived: row.isArchived,
@@ -967,6 +1413,14 @@ function toConversation(
     title: row.title,
     directPairKey: row.directPairKey,
     connectionStatus: row.connectionRequest?.status ?? null,
+    description: row.description,
+    category: row.category,
+    isPublic: row.isPublic,
+    requiresApproval: row.requiresApproval,
+    avatarKey: row.avatarKey,
+    createdBy: row.createdBy,
+    inviteCode: row.inviteCode,
+    status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     participants: row.participants.map(toParticipant),
@@ -1011,12 +1465,40 @@ function toReceipt(row: PrismaReceipt): ReceiptRecord {
   };
 }
 
-function toMessage(
-  row: PrismaMessage & {
-    attachments: PrismaAttachment[];
-    receipts: PrismaReceipt[];
-  },
-): MessageRecord {
+function toPollVote(row: PrismaPollVote): PollVoteRecord {
+  return {
+    id: row.id,
+    pollOptionId: row.pollOptionId,
+    userId: row.userId,
+    createdAt: row.createdAt,
+  };
+}
+
+function toPollOption(
+  row: PrismaPollOption & { votes: PrismaPollVote[] },
+): PollOptionRecord {
+  return {
+    id: row.id,
+    pollId: row.pollId,
+    text: row.text,
+    position: row.position,
+    votes: row.votes.map(toPollVote),
+  };
+}
+
+function toPoll(
+  row: PrismaPoll & { options: (PrismaPollOption & { votes: PrismaPollVote[] })[] },
+): PollRecord {
+  return {
+    id: row.id,
+    messageId: row.messageId,
+    question: row.question,
+    createdAt: row.createdAt,
+    options: row.options.map(toPollOption),
+  };
+}
+
+function toMessage(row: MessageRow): MessageRecord {
   return {
     id: row.id,
     conversationId: row.conversationId,
@@ -1032,6 +1514,7 @@ function toMessage(
     deletedAt: row.deletedAt,
     attachments: row.attachments.map(toAttachment),
     receipts: row.receipts.map(toReceipt),
+    poll: row.poll ? toPoll(row.poll) : null,
   };
 }
 

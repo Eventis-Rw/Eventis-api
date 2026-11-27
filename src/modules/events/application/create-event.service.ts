@@ -6,6 +6,7 @@ import {
   MAX_EVENT_COVER_SIZE,
   StorageService,
 } from "../../../infrastructure/storage/storage.service.js";
+import { OrganisationsService } from "../../organisations/index.js";
 import { createEvent, type EventStatus } from "../domain/event.js";
 import { EventRepository } from "../infrastructure/event.repository.js";
 
@@ -49,12 +50,18 @@ export class CreateEventService {
     private readonly events: EventRepository,
     private readonly storage: StorageService,
     private readonly clock: Clock,
+    private readonly organisations: OrganisationsService,
   ) {}
 
   async execute(input: CreateEventInput) {
     if (input.coverFile) {
       this.storage.validateImage(input.coverFile, "cover_image", MAX_EVENT_COVER_SIZE);
     }
+
+    const credit = await this.organisations.consumeEventPostCredit(
+      input.posterId,
+      this.clock.now(),
+    );
 
     let uploadedCover: string | null = null;
     let persistedCover = false;
@@ -123,7 +130,14 @@ export class CreateEventService {
           // Preserve the upload or persistence error that caused the rollback.
         }
       }
-      if (error instanceof Error && /Invalid (time|date)/.test(error.message)) {
+      if (credit) {
+        try {
+          await this.organisations.refundEventPostCredit(credit.subscriptionId);
+        } catch {
+          // Preserve the original error; the credit can be reconciled manually.
+        }
+      }
+      if (error instanceof Error && /Invalid (time|date)|End date|Paid events|price/.test(error.message)) {
         throw AppError.validation({ _: [error.message] });
       }
       throw error;

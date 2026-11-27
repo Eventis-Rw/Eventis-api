@@ -47,7 +47,7 @@ const bigintSchema = z
   .transform((value) => BigInt(value));
 
 const optionalBigint = z.preprocess(
-  (val) => (val === "" || val === undefined ? undefined : val),
+  (val) => (val === "null" ? null : val === "" || val === undefined ? undefined : val),
   bigintSchema.nullable().optional(),
 );
 
@@ -60,6 +60,19 @@ const tagsSchema = z.preprocess(
           .filter(Boolean)
       : val,
   z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+);
+
+/** External ticketing link (e.g. a ticket platform). Only web links, since attendees open it directly. */
+const ticketUrlSchema = z.preprocess(
+  (val) => (val === "" || val === "null" ? null : val),
+  z
+    .string()
+    .trim()
+    .max(500)
+    .url("booking_url must be a valid link")
+    .refine((value) => /^https?:\/\//i.test(value), "booking_url must start with http:// or https://")
+    .nullable()
+    .optional(),
 );
 
 const nullableUuid = z.string().uuid().nullable().optional();
@@ -116,7 +129,7 @@ export const updateEventDto = z
       .regex(/^[A-Za-z]{3}$/, "currency must be a 3-letter code")
       .transform((value) => value.toUpperCase())
       .optional(),
-    booking_url: z.string().trim().url().max(500).nullable().optional(),
+    booking_url: ticketUrlSchema,
     instructions: nullableText(10_000),
     tags: tagsSchema,
     organisation_id: nullableUuid,
