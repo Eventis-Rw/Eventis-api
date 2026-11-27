@@ -98,6 +98,8 @@ export class FindLoveRepository {
     backKey: string | null;
     dateOfBirth: Date | null;
     adultConfirmedAt: Date;
+    termsVersion: string | null;
+    termsAcceptedAt: Date | null;
   }): Promise<AgeVerification> {
     return this.prisma.ageVerification.create({ data: input });
   }

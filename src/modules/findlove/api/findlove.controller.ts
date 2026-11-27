@@ -41,6 +41,8 @@ const ageVerificationSchema = z.object({
   backKey: z.string().trim().max(500).nullable().optional(),
   dateOfBirth: z.coerce.date().optional(),
   adultConfirmed: z.boolean(),
+  // Optional so app builds from before this field keep working.
+  termsVersion: z.string().trim().min(1).max(20).optional(),
 });
 const ageVerificationListSchema = pageSchema.extend({
   status: z
@@ -140,6 +142,7 @@ export class FindLoveController {
       backKey: body.backKey,
       dateOfBirth: body.dateOfBirth,
       adultConfirmed: body.adultConfirmed,
+      termsVersion: body.termsVersion,
     });
   }
 

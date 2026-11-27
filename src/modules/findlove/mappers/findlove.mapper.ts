@@ -59,6 +59,8 @@ export function toAgeVerificationResponse(row: AgeVerification) {
     dateOfBirth: row.dateOfBirth?.toISOString().slice(0, 10) ?? null,
     submittedAt: row.submittedAt.toISOString(),
     reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    termsVersion: row.termsVersion,
+    termsAcceptedAt: row.termsAcceptedAt?.toISOString() ?? null,
   };
 }
 

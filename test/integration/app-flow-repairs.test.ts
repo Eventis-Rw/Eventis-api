@@ -163,12 +163,18 @@ suite("repairs to the demonstrated application flows", () => {
   });
   it("includes an applicant before profile creation and protects their document", async () => {
     const document = await upload(member, "AGE_ID");
-    await json("/findlove/age-verification", member, "POST", {
+    const submitted = await json<{
+      termsVersion: string | null;
+      termsAcceptedAt: string | null;
+    }>("/findlove/age-verification", member, "POST", {
       documentType: "PASSPORT",
       frontKey: document.key,
       adultConfirmed: true,
       dateOfBirth: "1998-03-15",
+      termsVersion: "2026-11-draft",
     });
+    expect(submitted.termsVersion).toBe("2026-11-draft");
+    expect(submitted.termsAcceptedAt).toEqual(expect.any(String));
     const snapshot = await json<MembershipSnapshot>(
       "/admin/findlove-workspace",
       admin,

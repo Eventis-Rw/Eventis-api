@@ -70,6 +70,7 @@ export class FindLoveService {
       backKey?: string | null | undefined;
       dateOfBirth?: Date | undefined;
       adultConfirmed: boolean;
+      termsVersion?: string | undefined;
     },
   ) {
     if (!input.adultConfirmed) {
@@ -82,13 +83,16 @@ export class FindLoveService {
         dateOfBirth: ["You must be at least 18 years old"],
       });
     }
+    const now = this.clock.now();
     const row = await this.findlove.createAgeVerification({
       userId,
       documentType: input.documentType,
       frontKey: input.frontKey.trim(),
       backKey: input.backKey?.trim() || null,
       dateOfBirth: input.dateOfBirth ?? null,
-      adultConfirmedAt: this.clock.now(),
+      adultConfirmedAt: now,
+      termsVersion: input.termsVersion ?? null,
+      termsAcceptedAt: input.termsVersion ? now : null,
     });
     if (
       this.env.FINDLOVE_AGE_AUTO_APPROVE &&

@@ -1571,6 +1571,9 @@ model AgeVerification {
   frontKey         String                @map("front_key") @db.VarChar(500)
   backKey          String?               @map("back_key") @db.VarChar(500)
   adultConfirmedAt DateTime?             @map("adult_confirmed_at") @db.Timestamptz(6)
+  /// Version of the FindLove Terms, Community Guidelines and Privacy Notice the member agreed to.
+  termsVersion     String?               @map("terms_version") @db.VarChar(20)
+  termsAcceptedAt  DateTime?             @map("terms_accepted_at") @db.Timestamptz(6)
   status           AgeVerificationStatus @default(PROCESSING)
   rejectionReason  String?               @map("rejection_reason") @db.Text
   dateOfBirth      DateTime?             @map("date_of_birth") @db.Date

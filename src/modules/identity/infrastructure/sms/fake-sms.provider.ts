@@ -12,6 +12,10 @@ export class FakeSmsProvider implements SmsProvider {
     this.sent.push(input);
 
     this.logger.debug(`fake SMS queued for ${maskPhone(input.to)}`);
+    // LOCAL DEV ONLY — do not commit. Shows the OTP so signup can be tested by hand.
+    if (process.env.NODE_ENV === "development") {
+      this.logger.warn(`[DEV] SMS to ${input.to}: ${input.message}`);
+    }
     return Promise.resolve();
   }
 
