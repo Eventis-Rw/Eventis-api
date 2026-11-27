@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 import { ERROR_CODES } from "@eventis/contracts";
 import { Inject, Injectable } from "@nestjs/common";
@@ -24,8 +24,10 @@ import {
   INVITATION_RATE,
   INVITATION_TTL_MS,
   MESSAGE_RATE,
+  PolicyViolationError,
   assertPolicyAllowed,
   canTransitionCall,
+  canTransitionParticipantStatus,
   directPairKey,
   generateInvitationToken,
   hashInvitationToken,
@@ -35,9 +37,13 @@ import type {
   CallStatus,
   CallType,
   ConversationRecord,
+  ConversationStatus,
   ConversationType,
   MessageRecord,
   MessageType,
+  ParticipantRole,
+  ParticipantStatus,
+  ReportCategory,
 } from "../domain/chat.js";
 import type { MessagingService } from "../domain/messaging-policy.js";
 import { DEFAULT_MESSAGING_SERVICE } from "../domain/messaging-policy.js";
@@ -185,6 +191,10 @@ export class ChatService {
       contextId?: string | null | undefined;
       type?: ConversationType | undefined;
       title?: string | null | undefined;
+      description?: string | null | undefined;
+      category?: string | null | undefined;
+      isPublic?: boolean | undefined;
+      requiresApproval?: boolean | undefined;
     },
   ) {
     const requested = [...new Set(input.userIds)];
@@ -249,6 +259,19 @@ export class ChatService {
         ...(service === "FINDLOVE" && type === "DIRECT" && peerId !== userId
           ? { connection: { requesterId: userId, recipientId: peerId! } }
           : {}),
+        ...(type === "GROUP"
+          ? {
+              group: {
+                description: input.description?.trim() || null,
+                category: input.category?.trim() || null,
+                isPublic: input.isPublic ?? false,
+                requiresApproval: input.requiresApproval ?? false,
+                avatarKey: null,
+                createdBy: userId,
+                inviteCode: generateGroupInviteCode(),
+              },
+            }
+          : {}),
       });
     } catch (error) {
       if (pairKey) {
@@ -258,6 +281,373 @@ export class ChatService {
       throw error;
     }
     return this.presentConversation(conversation);
+  }
+
+  // ---------- Groups ----------
+
+  async searchGroups(
+    userId: string,
+    input: {
+      query?: string | undefined;
+      category?: string | undefined;
+      service?: MessagingService | undefined;
+      page: number;
+      limit: number;
+    },
+  ) {
+    const result = await this.chat.searchPublicGroups({
+      query: input.query?.trim() || undefined,
+      category: input.category?.trim() || undefined,
+      service: input.service ?? DEFAULT_MESSAGING_SERVICE,
+      viewerId: userId,
+      page: input.page,
+      limit: input.limit,
+    });
+    const counts = await Promise.all(
+      result.items.map((item) => this.chat.countActiveMembers(item.id)),
+    );
+    return {
+      items: result.items.map((item, index) => ({
+        ...this.toGroupSummary(item),
+        memberCount: counts[index],
+        isMember: item.participants.some(
+          (p) => p.userId === userId && p.status === "ACTIVE",
+        ),
+        hasPendingRequest: item.participants.some(
+          (p) => p.userId === userId && p.status === "PENDING_APPROVAL",
+        ),
+      })),
+      page: input.page,
+      limit: input.limit,
+      total: result.total,
+    };
+  }
+
+  private toGroupSummary(conversation: ConversationRecord) {
+    return {
+      id: conversation.id,
+      title: conversation.title,
+      description: conversation.description,
+      category: conversation.category,
+      isPublic: conversation.isPublic,
+      requiresApproval: conversation.requiresApproval,
+      avatarUrl: this.storage.getPublicUrl(conversation.avatarKey),
+      createdAt: conversation.createdAt.toISOString(),
+    };
+  }
+
+  async joinGroup(userId: string, conversationId: string) {
+    const conversation = await this.chat.findConversationById(conversationId);
+    if (!conversation || conversation.type !== "GROUP" || conversation.status !== "ACTIVE") {
+      throw AppError.notFound("Group");
+    }
+    if (!conversation.isPublic) {
+      throw new PolicyViolationError("GROUP_JOIN_NOT_ALLOWED");
+    }
+    const existing = conversation.participants.find((p) => p.userId === userId);
+    if (existing?.status === "BANNED") throw new PolicyViolationError("GROUP_BANNED");
+    if (existing?.status === "ACTIVE") throw new PolicyViolationError("ALREADY_MEMBER");
+    if (existing?.status === "PENDING_APPROVAL") {
+      return this.presentConversation(conversation);
+    }
+    const status = conversation.requiresApproval ? "PENDING_APPROVAL" : "ACTIVE";
+    await this.chat.upsertParticipant({ conversationId, userId, status });
+    const updated = await this.chat.findConversationById(conversationId);
+    return this.presentConversation(updated!);
+  }
+
+  async joinGroupByInviteCode(userId: string, inviteCode: string) {
+    const conversation = await this.chat.findConversationByInviteCode(
+      inviteCode.trim().toUpperCase(),
+    );
+    if (!conversation || conversation.type !== "GROUP" || conversation.status !== "ACTIVE") {
+      throw AppError.notFound("Group");
+    }
+    const existing = conversation.participants.find((p) => p.userId === userId);
+    if (existing?.status === "BANNED") throw new PolicyViolationError("GROUP_BANNED");
+    if (existing?.status === "ACTIVE") throw new PolicyViolationError("ALREADY_MEMBER");
+    await this.chat.upsertParticipant({ conversationId: conversation.id, userId, status: "ACTIVE" });
+    const updated = await this.chat.findConversationById(conversation.id);
+    return this.presentConversation(updated!);
+  }
+
+  async listJoinRequests(userId: string, conversationId: string) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    this.requireGroupAdmin(conversation, userId);
+    const pending = await this.chat.listPendingRequests(conversationId);
+    const profiles = await this.users.byIds(pending.map((p) => p.userId));
+    const profileMap = new Map(profiles.map((p) => [p.id, toChatPublicProfile(p)]));
+    return pending.map((p) => ({
+      userId: p.userId,
+      requestedAt: p.joinedAt.toISOString(),
+      profile: profileMap.get(p.userId) ?? null,
+    }));
+  }
+
+  async approveJoinRequest(userId: string, conversationId: string, requestUserId: string) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    this.requireGroupAdmin(conversation, userId);
+    const request = conversation.participants.find((p) => p.userId === requestUserId);
+    if (!request) throw AppError.notFound("Join request");
+    this.assertParticipantTransition(request.status, "ACTIVE");
+    await this.chat.setParticipantStatus({
+      conversationId,
+      userId: requestUserId,
+      status: "ACTIVE",
+      approvedBy: userId,
+    });
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async rejectJoinRequest(userId: string, conversationId: string, requestUserId: string) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    this.requireGroupAdmin(conversation, userId);
+    const request = conversation.participants.find((p) => p.userId === requestUserId);
+    if (!request) throw AppError.notFound("Join request");
+    this.assertParticipantTransition(request.status, "REMOVED");
+    await this.chat.setParticipantStatus({
+      conversationId,
+      userId: requestUserId,
+      status: "REMOVED",
+    });
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async addGroupMembers(userId: string, conversationId: string, userIds: string[]) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    if (conversation.type !== "GROUP") throw AppError.validation({ userIds: ["Not a group"] });
+    this.requireGroupAdmin(conversation, userId);
+    const requested = [...new Set(userIds)].filter((id) => id !== userId);
+    const profiles = await this.users.byIds(requested);
+    if (profiles.length !== requested.length) {
+      throw AppError.validation({ userIds: ["One or more users are unavailable"] });
+    }
+    for (const memberId of requested) {
+      const existing = conversation.participants.find((p) => p.userId === memberId);
+      if (existing?.status === "BANNED") continue;
+      if (existing) this.assertParticipantTransition(existing.status, "ACTIVE");
+      await this.chat.upsertParticipant({ conversationId, userId: memberId, status: "ACTIVE" });
+    }
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async removeGroupMember(userId: string, conversationId: string, targetUserId: string) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    const actor = this.requireGroupAdmin(conversation, userId);
+    const target = conversation.participants.find((p) => p.userId === targetUserId);
+    if (!target) throw AppError.notFound("Member");
+    if (target.role === "OWNER") {
+      throw AppError.validation({ userId: ["The group owner cannot be removed"] });
+    }
+    if (target.role === "ADMIN" && actor.role !== "OWNER") {
+      throw new PolicyViolationError("NOT_GROUP_ADMIN");
+    }
+    this.assertParticipantTransition(target.status, "REMOVED");
+    await this.chat.setParticipantStatus({ conversationId, userId: targetUserId, status: "REMOVED" });
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async setGroupMemberBan(
+    userId: string,
+    conversationId: string,
+    targetUserId: string,
+    banned: boolean,
+  ) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    const actor = this.requireGroupAdmin(conversation, userId);
+    const target = conversation.participants.find((p) => p.userId === targetUserId);
+    if (!target) throw AppError.notFound("Member");
+    if (target.role === "OWNER") {
+      throw AppError.validation({ userId: ["The group owner cannot be banned"] });
+    }
+    if (target.role === "ADMIN" && actor.role !== "OWNER") {
+      throw new PolicyViolationError("NOT_GROUP_ADMIN");
+    }
+    if (banned) {
+      this.assertParticipantTransition(target.status, "BANNED");
+      await this.chat.setParticipantStatus({ conversationId, userId: targetUserId, status: "BANNED" });
+    } else {
+      this.assertParticipantTransition(target.status, "REMOVED");
+      await this.chat.setParticipantStatus({ conversationId, userId: targetUserId, status: "REMOVED" });
+    }
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async setGroupMemberRole(
+    userId: string,
+    conversationId: string,
+    targetUserId: string,
+    role: Extract<ParticipantRole, "ADMIN" | "MEMBER">,
+  ) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    const actor = conversation.participants.find(
+      (p) => p.userId === userId && p.status === "ACTIVE",
+    );
+    if (!actor || actor.role !== "OWNER") {
+      throw new PolicyViolationError("NOT_GROUP_ADMIN");
+    }
+    const target = conversation.participants.find((p) => p.userId === targetUserId);
+    if (!target || target.status !== "ACTIVE") throw AppError.notFound("Member");
+    if (target.role === "OWNER") {
+      throw AppError.validation({ userId: ["The group owner's role cannot be changed this way"] });
+    }
+    await this.chat.setParticipantRole(conversationId, targetUserId, role);
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async transferGroupOwnership(userId: string, conversationId: string, toUserId: string) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    const owner = conversation.participants.find(
+      (p) => p.userId === userId && p.status === "ACTIVE",
+    );
+    if (!owner || owner.role !== "OWNER") throw new PolicyViolationError("NOT_GROUP_ADMIN");
+    const target = conversation.participants.find(
+      (p) => p.userId === toUserId && p.status === "ACTIVE",
+    );
+    if (!target) throw AppError.notFound("Member");
+    await this.chat.transferOwnership(conversationId, userId, toUserId);
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async leaveGroup(userId: string, conversationId: string) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    if (conversation.type !== "GROUP") throw AppError.validation({ id: ["Not a group"] });
+    const self = conversation.participants.find(
+      (p) => p.userId === userId && p.status === "ACTIVE",
+    )!;
+    if (self.role === "OWNER") {
+      const successor = conversation.participants
+        .filter((p) => p.userId !== userId && p.status === "ACTIVE")
+        .sort((a, b) => {
+          const rank = (role: typeof a.role) => (role === "ADMIN" ? 0 : 1);
+          return rank(a.role) - rank(b.role) || a.joinedAt.getTime() - b.joinedAt.getTime();
+        })[0];
+      if (successor) await this.chat.transferOwnership(conversationId, userId, successor.userId);
+    }
+    await this.chat.setParticipantStatus({ conversationId, userId, status: "LEFT" });
+    return { id: conversationId, left: true };
+  }
+
+  async updateGroupSettings(
+    userId: string,
+    conversationId: string,
+    input: {
+      title?: string | undefined;
+      description?: string | null | undefined;
+      category?: string | null | undefined;
+      isPublic?: boolean | undefined;
+      requiresApproval?: boolean | undefined;
+    },
+  ) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    if (conversation.type !== "GROUP") throw AppError.validation({ id: ["Not a group"] });
+    this.requireGroupAdmin(conversation, userId);
+    await this.chat.updateGroupSettings({
+      conversationId,
+      ...(input.title !== undefined ? { title: input.title.trim() || null } : {}),
+      ...(input.description !== undefined
+        ? { description: input.description?.trim() || null }
+        : {}),
+      ...(input.category !== undefined ? { category: input.category?.trim() || null } : {}),
+      ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
+      ...(input.requiresApproval !== undefined
+        ? { requiresApproval: input.requiresApproval }
+        : {}),
+    });
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async updateGroupAvatar(
+    userId: string,
+    conversationId: string,
+    file: { mimetype: string; data: Buffer; filename: string },
+  ) {
+    const conversation = await this.requireConversation(userId, conversationId);
+    if (conversation.type !== "GROUP") throw AppError.validation({ id: ["Not a group"] });
+    this.requireGroupAdmin(conversation, userId);
+    const key = await this.storage.uploadGroupAvatar(conversationId, file);
+    const previousKey = conversation.avatarKey;
+    await this.chat.updateGroupSettings({ conversationId, avatarKey: key });
+    if (previousKey) await this.storage.deleteFile(previousKey).catch(() => undefined);
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  // ---------- Admin (Chat Management dashboard) ----------
+  // These skip the normal participant-membership checks: platform staff act on
+  // conversations they are not a member of. Route-level ConsoleAccess guards are
+  // the actual authorization boundary here, not conversation membership.
+
+  async adminOverview(service: MessagingService = DEFAULT_MESSAGING_SERVICE) {
+    return this.chat.adminChatOverview(service);
+  }
+
+  async adminListConversations(input: {
+    type?: ConversationType | undefined;
+    status?: ConversationStatus | undefined;
+    query?: string | undefined;
+    service?: MessagingService | undefined;
+    page: number;
+    limit: number;
+  }) {
+    const result = await this.chat.adminListConversations({
+      type: input.type,
+      status: input.status,
+      query: input.query?.trim() || undefined,
+      service: input.service ?? DEFAULT_MESSAGING_SERVICE,
+      page: input.page,
+      limit: input.limit,
+    });
+    const profiles = await this.users.byIds(
+      result.items.flatMap((item) => item.participants.map((p) => p.userId)),
+    );
+    const profileMap = new Map(profiles.map((p) => [p.id, toChatPublicProfile(p)]));
+    return {
+      items: result.items.map((item) =>
+        toConversationResponse(item, profileMap, 0, (key) => this.storage.getPublicUrl(key)),
+      ),
+      page: input.page,
+      limit: input.limit,
+      total: result.total,
+    };
+  }
+
+  async adminGetConversation(conversationId: string) {
+    const conversation = await this.chat.findConversationById(conversationId);
+    if (!conversation) throw AppError.notFound("Conversation");
+    return this.presentConversation(conversation);
+  }
+
+  async adminSetConversationStatus(conversationId: string, status: ConversationStatus) {
+    const updated = await this.chat.setConversationStatus(conversationId, status);
+    this.realtime.emitToUsers(
+      updated.participants.map((p) => p.userId),
+      "chat:conversation:updated",
+      { id: updated.id, status: updated.status, service: updated.service },
+    );
+    return this.presentConversation(updated);
+  }
+
+  async adminRemoveMember(conversationId: string, targetUserId: string) {
+    const conversation = await this.chat.findConversationById(conversationId);
+    if (!conversation) throw AppError.notFound("Conversation");
+    const target = conversation.participants.find((p) => p.userId === targetUserId);
+    if (!target) throw AppError.notFound("Member");
+    this.assertParticipantTransition(target.status, "REMOVED");
+    await this.chat.setParticipantStatus({ conversationId, userId: targetUserId, status: "REMOVED" });
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
+  }
+
+  async adminTransferOwnership(conversationId: string, toUserId: string) {
+    const conversation = await this.chat.findConversationById(conversationId);
+    if (!conversation) throw AppError.notFound("Conversation");
+    const owner = conversation.participants.find((p) => p.role === "OWNER");
+    const target = conversation.participants.find(
+      (p) => p.userId === toUserId && p.status === "ACTIVE",
+    );
+    if (!target) throw AppError.notFound("Member");
+    if (owner) await this.chat.transferOwnership(conversationId, owner.userId, toUserId);
+    else await this.chat.setParticipantRole(conversationId, toUserId, "OWNER");
+    return this.presentConversation((await this.chat.findConversationById(conversationId))!);
   }
 
   async listConversations(
@@ -284,7 +674,9 @@ export class ChatService {
     );
     return {
       items: result.items.map((item) =>
-        this.withPresence(toConversationResponse(item, profileMap)),
+        this.withPresence(
+          toConversationResponse(item, profileMap, 0, (key) => this.storage.getPublicUrl(key)),
+        ),
       ),
       page: input.page,
       limit: input.limit,
@@ -433,6 +825,78 @@ export class ChatService {
     }
     this.publishMessage(conversation, message);
     return toMessageResponse(message);
+  }
+
+  async createPoll(
+    userId: string,
+    conversationId: string,
+    input: { question: string; options: string[] },
+  ) {
+    this.rateLimiter.consume(
+      `message:${userId}`,
+      this.clock.now(),
+      MESSAGE_RATE.max,
+      MESSAGE_RATE.windowMs,
+    );
+    const conversation = await this.requireConversation(userId, conversationId);
+    await this.assertCanSend(userId, conversation);
+    const recipients = conversation.participants
+      .filter((p) => p.userId !== userId)
+      .map((p) => p.id);
+    const message = await this.chat.createPollMessage({
+      conversationId,
+      senderId: userId,
+      question: input.question.trim(),
+      options: input.options.map((option) => option.trim()),
+      recipientParticipantIds: recipients,
+      now: this.clock.now(),
+    });
+    this.publishMessage(conversation, message);
+    return toMessageResponse(message);
+  }
+
+  async votePoll(userId: string, pollId: string, pollOptionId: string) {
+    const owner = await this.chat.findPollOwningMessage(pollId);
+    if (!owner?.poll) throw AppError.notFound("Poll");
+    const conversation = await this.requireConversation(
+      userId,
+      owner.conversationId,
+    );
+    if (!owner.poll.options.some((option) => option.id === pollOptionId)) {
+      throw AppError.validation({
+        pollOptionId: ["That option does not belong to this poll"],
+      });
+    }
+    const updated = await this.chat.castPollVote({
+      pollId,
+      pollOptionId,
+      userId,
+      now: this.clock.now(),
+    });
+    if (!updated) throw AppError.notFound("Poll");
+    this.realtime.emitToUsers(
+      conversation.participants.map((p) => p.userId),
+      "chat:message:updated",
+      { ...toMessageResponse(updated), service: conversation.service },
+    );
+    return toMessageResponse(updated);
+  }
+
+  async retractPollVote(userId: string, pollId: string) {
+    const owner = await this.chat.findPollOwningMessage(pollId);
+    if (!owner?.poll) throw AppError.notFound("Poll");
+    const conversation = await this.requireConversation(
+      userId,
+      owner.conversationId,
+    );
+    const updated = await this.chat.retractPollVote({ pollId, userId });
+    if (!updated) throw AppError.notFound("Poll");
+    this.realtime.emitToUsers(
+      conversation.participants.map((p) => p.userId),
+      "chat:message:updated",
+      { ...toMessageResponse(updated), service: conversation.service },
+    );
+    return toMessageResponse(updated);
   }
 
   async editMessage(userId: string, messageId: string, content: string) {
@@ -1205,24 +1669,35 @@ export class ChatService {
   async reportUser(
     userId: string,
     input: {
-      userId: string;
+      userId?: string | undefined;
       reason: string;
       conversationId?: string | undefined;
+      messageId?: string | undefined;
+      category?: ReportCategory | undefined;
       details?: string | undefined;
     },
   ) {
-    if (userId === input.userId) {
-      throw AppError.validation({ userId: ["You cannot report yourself"] });
+    if (!input.userId && !input.conversationId) {
+      throw AppError.validation({
+        conversationId: ["Report a user, a conversation, or both"],
+      });
     }
-    const profiles = await this.users.byIds([input.userId]);
-    if (profiles.length !== 1) throw AppError.notFound("User");
+    if (input.userId) {
+      if (userId === input.userId) {
+        throw AppError.validation({ userId: ["You cannot report yourself"] });
+      }
+      const profiles = await this.users.byIds([input.userId]);
+      if (profiles.length !== 1) throw AppError.notFound("User");
+    }
     if (input.conversationId) {
       await this.requireConversation(userId, input.conversationId);
     }
     const report = await this.chat.createReport({
       reporterId: userId,
-      reportedUserId: input.userId,
+      reportedUserId: input.userId ?? null,
       conversationId: input.conversationId ?? null,
+      messageId: input.messageId ?? null,
+      category: input.category ?? null,
       reason: input.reason,
       details: input.details ?? null,
     });
@@ -1291,6 +1766,8 @@ export class ChatService {
         new Map(
           profiles.map((profile) => [profile.id, toChatPublicProfile(profile)]),
         ),
+        0,
+        (key) => this.storage.getPublicUrl(key),
       ),
     );
   }
@@ -1312,12 +1789,38 @@ export class ChatService {
     if (!conversation) throw AppError.notFound("Conversation");
     if (
       !conversation.participants.some(
-        (participant) => participant.userId === userId,
+        (participant) => participant.userId === userId && participant.status === "ACTIVE",
       )
     ) {
       throw AppError.forbidden();
     }
     return conversation;
+  }
+
+  /** Like requireConversation, but for group-management actions that require OWNER/ADMIN. */
+  private requireGroupAdmin(
+    conversation: ConversationRecord,
+    userId: string,
+  ) {
+    const participant = conversation.participants.find(
+      (p) => p.userId === userId && p.status === "ACTIVE",
+    );
+    if (!participant || (participant.role !== "OWNER" && participant.role !== "ADMIN")) {
+      throw new PolicyViolationError("NOT_GROUP_ADMIN");
+    }
+    return participant;
+  }
+
+  private assertParticipantTransition(
+    from: ParticipantStatus,
+    to: ParticipantStatus,
+  ) {
+    if (!canTransitionParticipantStatus(from, to)) {
+      throw AppError.conflict(
+        ERROR_CODES.VALIDATION_FAILED,
+        `Cannot move a member from ${from} to ${to}`,
+      );
+    }
   }
 
   private publishMessage(
@@ -1420,4 +1923,8 @@ function isUniqueConstraintError(error: unknown): boolean {
 function toChatPublicProfile(profile: PublicUserProfile): ChatPublicProfile {
   const { phone: _phone, ...publicProfile } = profile;
   return publicProfile;
+}
+
+function generateGroupInviteCode(): string {
+  return randomBytes(5).toString("hex").toUpperCase();
 }

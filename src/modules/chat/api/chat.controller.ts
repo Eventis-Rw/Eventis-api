@@ -72,6 +72,36 @@ const createConversationSchema = z.object({
   contextId: z.string().uuid().nullable().optional(),
   type: z.enum(["DIRECT", "GROUP"]).optional(),
   title: z.string().trim().min(1).max(120).nullable().optional(),
+  description: z.string().trim().max(500).nullable().optional(),
+  category: z.string().trim().max(60).nullable().optional(),
+  isPublic: z.boolean().optional(),
+  requiresApproval: z.boolean().optional(),
+});
+const searchGroupsSchema = pageSchema.extend({
+  query: z.string().trim().max(120).optional(),
+  category: z.string().trim().max(60).optional(),
+  service: serviceSchema.optional(),
+});
+const groupSettingsSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.string().trim().max(60).nullable().optional(),
+    isPublic: z.boolean().optional(),
+    requiresApproval: z.boolean().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0);
+const addMembersSchema = z.object({
+  userIds: z.array(z.string().uuid()).min(1).max(99),
+});
+const memberRoleSchema = z.object({
+  role: z.enum(["ADMIN", "MEMBER"]),
+});
+const transferOwnershipSchema = z.object({
+  userId: z.string().uuid(),
+});
+const joinByCodeSchema = z.object({
+  inviteCode: z.string().trim().min(4).max(40),
 });
 const listConversationsSchema = pageSchema.extend({
   service: serviceSchema.optional(),
@@ -91,6 +121,20 @@ const sendMessageSchema = z.object({
 });
 const editMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
+});
+const createPollSchema = z.object({
+  question: z.string().trim().min(1).max(300),
+  options: z
+    .array(z.string().trim().min(1).max(120))
+    .min(2)
+    .max(12)
+    .refine(
+      (options) => new Set(options.map((o) => o.toLowerCase())).size === options.length,
+      "Poll options must be unique",
+    ),
+});
+const pollVoteSchema = z.object({
+  pollOptionId: z.string().uuid(),
 });
 const conversationSettingsSchema = z
   .object({
@@ -114,12 +158,26 @@ const updateAliasSchema = z.object({
 const blockSchema = z.object({
   userId: z.string().uuid(),
 });
-const reportSchema = z.object({
-  userId: z.string().uuid(),
-  reason: z.string().trim().min(1).max(80),
-  conversationId: z.string().uuid().optional(),
-  details: z.string().trim().max(2000).optional(),
-});
+const reportCategorySchema = z.enum([
+  "SPAM",
+  "HARASSMENT",
+  "IMPERSONATION",
+  "INAPPROPRIATE_CONTENT",
+  "OTHER",
+]);
+const reportSchema = z
+  .object({
+    userId: z.string().uuid().optional(),
+    reason: z.string().trim().min(1).max(80),
+    conversationId: z.string().uuid().optional(),
+    messageId: z.string().uuid().optional(),
+    category: reportCategorySchema.optional(),
+    details: z.string().trim().max(2000).optional(),
+  })
+  .refine((value) => Boolean(value.userId || value.conversationId), {
+    message: "Report a user, a conversation, or both",
+    path: ["conversationId"],
+  });
 const connectionSchema = z.object({
   status: z.enum(["ACCEPTED", "REJECTED", "CANCELLED"]),
 });
@@ -216,6 +274,147 @@ export class ChatController {
     return this.chat.updateConversationSettings(userId, id, body);
   }
 
+  @Get("groups/search")
+  searchGroups(
+    @CurrentUserId() userId: string,
+    @Query(zodPipe(searchGroupsSchema)) query: z.infer<typeof searchGroupsSchema>,
+  ) {
+    return this.chat.searchGroups(userId, query);
+  }
+
+  @Post("groups/join-by-code")
+  joinGroupByInviteCode(
+    @CurrentUserId() userId: string,
+    @Body(zodPipe(joinByCodeSchema)) body: z.infer<typeof joinByCodeSchema>,
+  ) {
+    return this.chat.joinGroupByInviteCode(userId, body.inviteCode);
+  }
+
+  @Post("conversations/:id/join")
+  @HttpCode(200)
+  joinGroup(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.joinGroup(userId, id);
+  }
+
+  @Post("conversations/:id/leave")
+  @HttpCode(200)
+  leaveGroup(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.leaveGroup(userId, id);
+  }
+
+  @Get("conversations/:id/requests")
+  listJoinRequests(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.listJoinRequests(userId, id);
+  }
+
+  @Post("conversations/:id/requests/:requestUserId/approve")
+  @HttpCode(200)
+  approveJoinRequest(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Param("requestUserId", zodPipe(idSchema)) requestUserId: string,
+  ) {
+    return this.chat.approveJoinRequest(userId, id, requestUserId);
+  }
+
+  @Post("conversations/:id/requests/:requestUserId/reject")
+  @HttpCode(200)
+  rejectJoinRequest(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Param("requestUserId", zodPipe(idSchema)) requestUserId: string,
+  ) {
+    return this.chat.rejectJoinRequest(userId, id, requestUserId);
+  }
+
+  @Post("conversations/:id/participants")
+  @HttpCode(200)
+  addGroupMembers(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(addMembersSchema)) body: z.infer<typeof addMembersSchema>,
+  ) {
+    return this.chat.addGroupMembers(userId, id, body.userIds);
+  }
+
+  @Delete("conversations/:id/participants/:targetUserId")
+  @HttpCode(200)
+  removeGroupMember(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Param("targetUserId", zodPipe(idSchema)) targetUserId: string,
+  ) {
+    return this.chat.removeGroupMember(userId, id, targetUserId);
+  }
+
+  @Post("conversations/:id/participants/:targetUserId/ban")
+  @HttpCode(200)
+  banGroupMember(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Param("targetUserId", zodPipe(idSchema)) targetUserId: string,
+  ) {
+    return this.chat.setGroupMemberBan(userId, id, targetUserId, true);
+  }
+
+  @Post("conversations/:id/participants/:targetUserId/unban")
+  @HttpCode(200)
+  unbanGroupMember(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Param("targetUserId", zodPipe(idSchema)) targetUserId: string,
+  ) {
+    return this.chat.setGroupMemberBan(userId, id, targetUserId, false);
+  }
+
+  @Patch("conversations/:id/participants/:targetUserId/role")
+  updateGroupMemberRole(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Param("targetUserId", zodPipe(idSchema)) targetUserId: string,
+    @Body(zodPipe(memberRoleSchema)) body: z.infer<typeof memberRoleSchema>,
+  ) {
+    return this.chat.setGroupMemberRole(userId, id, targetUserId, body.role);
+  }
+
+  @Post("conversations/:id/transfer-ownership")
+  @HttpCode(200)
+  transferGroupOwnership(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(transferOwnershipSchema)) body: z.infer<typeof transferOwnershipSchema>,
+  ) {
+    return this.chat.transferGroupOwnership(userId, id, body.userId);
+  }
+
+  @Patch("conversations/:id/group")
+  updateGroupSettings(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(groupSettingsSchema)) body: z.infer<typeof groupSettingsSchema>,
+  ) {
+    return this.chat.updateGroupSettings(userId, id, body);
+  }
+
+  @Post("conversations/:id/group/avatar")
+  async updateGroupAvatar(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Req() req: FastifyRequest,
+  ) {
+    const file = await parseSingleFile(req, "file");
+    return this.chat.updateGroupAvatar(userId, id, file);
+  }
+
   @Get("conversations/:id/messages")
   listMessages(
     @CurrentUserId() userId: string,
@@ -233,6 +432,33 @@ export class ChatController {
     @Body(zodPipe(sendMessageSchema)) body: z.infer<typeof sendMessageSchema>,
   ) {
     return this.chat.sendMessage(userId, id, body);
+  }
+
+  @Post("conversations/:id/messages/poll")
+  createPoll(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(createPollSchema)) body: z.infer<typeof createPollSchema>,
+  ) {
+    return this.chat.createPoll(userId, id, body);
+  }
+
+  @Post("polls/:id/vote")
+  votePoll(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+    @Body(zodPipe(pollVoteSchema)) body: z.infer<typeof pollVoteSchema>,
+  ) {
+    return this.chat.votePoll(userId, id, body.pollOptionId);
+  }
+
+  @Delete("polls/:id/vote")
+  @HttpCode(200)
+  retractPollVote(
+    @CurrentUserId() userId: string,
+    @Param("id", zodPipe(idSchema)) id: string,
+  ) {
+    return this.chat.retractPollVote(userId, id);
   }
 
   @Post("messages/:id/forward")
@@ -498,4 +724,44 @@ async function parseAttachment(req: FastifyRequest): Promise<ChatUploadedFile> {
     });
   }
   return { ...file, ...details.data };
+}
+
+interface SimpleUploadedFile {
+  mimetype: string;
+  filename: string;
+  data: Buffer;
+}
+
+async function parseSingleFile(
+  req: FastifyRequest,
+  fieldname: string,
+): Promise<SimpleUploadedFile> {
+  if (!(req.headers["content-type"] ?? "").includes("multipart/form-data")) {
+    throw AppError.validation({ file: ["Upload a file using multipart/form-data"] });
+  }
+  let file: SimpleUploadedFile | undefined;
+  try {
+    for await (const part of req.parts()) {
+      if (part.type === "file" && part.fieldname === fieldname && !file) {
+        file = {
+          mimetype: part.mimetype,
+          filename: part.filename,
+          data: await part.toBuffer(),
+        };
+      }
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "FST_REQ_FILE_TOO_LARGE" || error.code === "FST_FILES_LIMIT")
+    ) {
+      throw AppError.validation({ file: ["Upload one file no larger than 15 MiB"] });
+    }
+    throw error;
+  }
+  if (!file) throw AppError.validation({ file: [`A ${fieldname} file is required`] });
+  return file;
 }

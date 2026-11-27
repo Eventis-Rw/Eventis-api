@@ -273,7 +273,9 @@ export class AdminMembershipRepository {
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       reports: reports.map((r) => ({
         id: r.id,
-        memberId: r.reportedUserId,
+        // reportedUserId is nullable on UserReport (group/conversation reports have no single
+        // target user), but the `where` filter above only ever matches rows where it's set.
+        memberId: r.reportedUserId!,
         category: r.reason,
         details: r.details ?? "",
         status:
